@@ -1,0 +1,8 @@
+#%PAM-1.0
+# PAM configuration for polkit with sentinel
+# sufficient = if confirmed, skip password; if denied, fail
+auth       sufficient pam_sentinel.so
+auth       include    system-auth
+account    include    system-auth
+password   include    system-auth
+session    include    system-auth

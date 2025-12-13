@@ -1,0 +1,58 @@
+post_install() {
+    # Add to sudo if not already present
+    if ! grep -q "pam_sentinel.so" /etc/pam.d/sudo 2>/dev/null; then
+        # Backup original
+        cp /etc/pam.d/sudo /etc/pam.d/sudo.bak
+
+        # Add our line at the top (after any comments)
+        sed -i '1,/^#/! {0,/^auth/ s/^auth/auth    sufficient    pam_sentinel.so\nauth/}' /etc/pam.d/sudo
+
+        # If sed didn't work (no auth line found), prepend it
+        if ! grep -q "pam_sentinel.so" /etc/pam.d/sudo; then
+            sed -i '1i auth    sufficient    pam_sentinel.so' /etc/pam.d/sudo
+        fi
+
+        echo ">>> pam_sentinel.so added to /etc/pam.d/sudo"
+        echo ">>> Backup saved to /etc/pam.d/sudo.bak"
+    else
+        echo ">>> pam_sentinel.so already configured in /etc/pam.d/sudo"
+    fi
+
+    echo ""
+    echo ">>> IMPORTANT: Keep a root shell open when testing!"
+    echo ">>> Run: sudo -i"
+    echo ">>> Then test in another terminal: sudo echo test"
+}
+
+post_upgrade() {
+    echo ">>> sentinel upgraded"
+    echo ">>> Config file: /etc/security/sentinel.conf"
+}
+
+pre_remove() {
+    # Remove from sudo
+    if grep -q "pam_sentinel.so" /etc/pam.d/sudo 2>/dev/null; then
+        sed -i '/pam_sentinel.so/d' /etc/pam.d/sudo
+        echo ">>> pam_sentinel.so removed from /etc/pam.d/sudo"
+    fi
+
+    # Note: /etc/pam.d/polkit-1 is removed by pacman (in backup array)
+    # If user modified it, pacman saves as .pacsave
+}
+
+post_remove() {
+    echo ">>> sentinel removed"
+
+    if [ -f /etc/pam.d/sudo.bak ]; then
+        echo ">>> Backup still exists at /etc/pam.d/sudo.bak"
+    fi
+
+    if [ -f /etc/pam.d/polkit-1.pacsave ]; then
+        echo ">>> Modified polkit config saved at /etc/pam.d/polkit-1.pacsave"
+        echo ">>> You may want to remove it: sudo rm /etc/pam.d/polkit-1.pacsave"
+    fi
+
+    if [ -f /etc/security/sentinel.conf.pacsave ]; then
+        echo ">>> Modified config saved at /etc/security/sentinel.conf.pacsave"
+    fi
+}

@@ -1,0 +1,31 @@
+# Build directories
+build/
+buildDir/
+pkg/
+
+# Meson
+.ninja_log
+.ninja_deps
+subprojects/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Compiled files
+*.o
+*.so
+*.a
+
+# Package builds
+*.pkg.tar.zst
+*.pkg.tar.xz
+pkg/
+src/
+
+# Debug
+core
+*.core
