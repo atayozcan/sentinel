@@ -24,14 +24,6 @@ impl PamHooks for PamSentinel {
     ) -> PamResultCode {
         init_logger();
 
-        let user = match pamh.get_user(None) {
-            Ok(u) => u,
-            Err(e) => {
-                log::error!("{MODULE_NAME}: cannot get username: {e:?}");
-                return PamResultCode::PAM_USER_UNKNOWN;
-            }
-        };
-
         let service = pamh
             .get_item::<pam::items::Service>()
             .ok()
@@ -46,12 +38,25 @@ impl PamHooks for PamSentinel {
             return PamResultCode::PAM_IGNORE;
         }
 
-        let target_uid = match nix::unistd::User::from_name(&user) {
-            Ok(Some(u)) => u.uid.as_raw(),
-            _ => unsafe { libc_getuid() },
+        // Identify the *requesting* user — the human who'll see the dialog.
+        // For pkexec/sudo, this is the calling user (uid != 0), not the
+        // target user being authenticated to (often root).
+        //
+        // PAM's get_user() can fail or return the target user depending on
+        // the service (polkit, in particular, doesn't always propagate
+        // PAM_USER), so we read /proc/<ppid>/loginuid which is set by
+        // login/PAM at session start and immune to setuid transitions.
+        let requesting_pid = unsafe { libc_getppid() };
+        let requesting_uid = caller_uid(requesting_pid);
+        let user = match nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(requesting_uid)) {
+            Ok(Some(u)) => u.name,
+            _ => pamh
+                .get_user(None)
+                .ok()
+                .unwrap_or_else(|| "unknown".into()),
         };
 
-        if !display::detect_for_user(target_uid) {
+        if !display::detect_for_user(requesting_uid) {
             return match cfg.headless_action {
                 HeadlessAction::Allow => {
                     if cfg.log_attempts {
@@ -78,7 +83,6 @@ impl PamHooks for PamSentinel {
             };
         }
 
-        let requesting_pid = unsafe { libc_getppid() };
         let process = ProcessInfo::for_pid(requesting_pid);
 
         let formatted_message = format_message(&cfg.message, &user, &service, &process.name);
@@ -91,7 +95,7 @@ impl PamHooks for PamSentinel {
             process: &process,
             formatted_message: &formatted_message,
             formatted_secondary: &formatted_secondary,
-            target_uid,
+            target_uid: requesting_uid,
             requesting_pid,
         };
 
@@ -158,4 +162,38 @@ unsafe fn libc_getuid() -> u32 {
 
 unsafe fn libc_getppid() -> i32 {
     unsafe { libc_getppid_raw() }
+}
+
+/// Identify the calling (human) user, even when the immediate caller is a
+/// setuid binary like sudo or pkexec.
+///
+/// Strategy:
+/// 1. `/proc/<ppid>/loginuid` — set by login/PAM at session start, immune to
+///    setuid transitions, the canonical Linux audit answer to "who is this
+///    really?". Returns `(uint32_t)-1` (i.e. 0xFFFFFFFF) for processes not
+///    associated with a login session.
+/// 2. `/proc/<ppid>/status` — the `Uid:` line, real-uid (first field).
+///    Works even for non-login processes.
+/// 3. Fall back to our own real uid.
+fn caller_uid(ppid: i32) -> u32 {
+    if ppid > 0
+        && let Ok(s) = std::fs::read_to_string(format!("/proc/{ppid}/loginuid"))
+        && let Ok(uid) = s.trim().parse::<u32>()
+        && uid != u32::MAX
+    {
+        return uid;
+    }
+    if ppid > 0
+        && let Ok(s) = std::fs::read_to_string(format!("/proc/{ppid}/status"))
+    {
+        for line in s.lines() {
+            if let Some(rest) = line.strip_prefix("Uid:")
+                && let Some(real) = rest.split_whitespace().next()
+                && let Ok(uid) = real.parse::<u32>()
+            {
+                return uid;
+            }
+        }
+    }
+    unsafe { libc_getuid() }
 }
