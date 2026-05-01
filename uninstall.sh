@@ -26,9 +26,19 @@ STATE_FILE="$STATE_DIR/install.state"
 FALLBACK_PATHS=(
     "$PREFIX/lib/security/pam_sentinel.so"
     "$PREFIX/$LIBEXECDIR/sentinel-helper"
+    "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
+    "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"
     "$SYSCONFDIR/security/sentinel.conf"
     "$SYSCONFDIR/pam.d/polkit-1"
 )
+
+# Identify the invoking user so we can run `systemctl --user` for them.
+BUILD_USER=""
+if [[ -n "${PKEXEC_UID:-}" ]]; then
+    BUILD_USER="$(getent passwd "$PKEXEC_UID" | cut -d: -f1 || true)"
+elif [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+    BUILD_USER="$SUDO_USER"
+fi
 
 ASSUME_YES=0
 for arg in "$@"; do
@@ -47,7 +57,24 @@ fi
 if [[ -f "$STATE_FILE" ]]; then
     step "Restoring pre-install state from $STATE_FILE…"
     failures=0
-    # Walk in reverse so files created later are removed first.
+
+    # First pass (forward order): handle ENABLED entries — disable systemd
+    # --user units before removing their unit files in the reverse pass.
+    while IFS=$'\t' read -r action target _; do
+        [[ "${action:-}" == "ENABLED" ]] || continue
+        unit="${target#systemd:user:}"
+        if [[ -n "$BUILD_USER" ]]; then
+            if runuser -u "$BUILD_USER" -- systemctl --user disable --now "$unit" 2>/dev/null; then
+                info "Disabled $unit (--user, as $BUILD_USER)"
+            else
+                warn "Could not disable $unit; carrying on"
+            fi
+        else
+            warn "No invoking user detected; skipping systemctl --user disable for $unit"
+        fi
+    done < "$STATE_FILE"
+
+    # Second pass (reverse order): undo CREATED / REPLACED.
     while IFS=$'\t' read -r action path backup; do
         [[ -z "${action:-}" ]] && continue
         case "$action" in
@@ -64,6 +91,9 @@ if [[ -f "$STATE_FILE" ]]; then
                 else
                     warn "Backup missing for $path; leaving current file in place"
                 fi
+                ;;
+            ENABLED|VERSION)
+                # Already handled above (ENABLED) or informational (VERSION).
                 ;;
             *)
                 warn "Unknown state entry: $action $path"

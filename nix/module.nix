@@ -23,6 +23,16 @@ in {
       default = false;
       description = "Wire pam_sentinel.so into /etc/pam.d/sudo as `sufficient`.";
     };
+
+    polkitAgent.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Run sentinel-polkit-agent as the session's polkit authentication
+        agent. When enabled, this systemd --user unit Conflicts= with
+        cosmic-osd / polkit-gnome / polkit-kde so only one agent runs.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -48,5 +58,14 @@ in {
       password   include    system-auth
       session    include    system-auth
     '');
+
+    # The polkit agent ships as an XDG autostart entry; the compositor
+    # forks it as a direct child so it inherits the graphical session's
+    # kernel sessionid. (A `systemd --user` unit can't satisfy polkit's
+    # session check because user@1000.service runs in a different session
+    # than the user's compositor.)
+    environment.etc."xdg/autostart/sentinel-polkit-agent.desktop" = lib.mkIf cfg.polkitAgent.enable {
+      source = "${cfg.package}/etc/xdg/autostart/sentinel-polkit-agent.desktop";
+    };
   };
 }

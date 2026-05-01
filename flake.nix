@@ -52,10 +52,16 @@
               $out/lib/security/pam_sentinel.so
             install -Dm755 target/release/sentinel-helper \
               $out/lib/sentinel-helper
+            install -Dm755 target/release/sentinel-polkit-agent \
+              $out/lib/sentinel-polkit-agent
             install -Dm644 config/sentinel.conf \
               $out/etc/security/sentinel.conf
             install -Dm644 config/polkit-1 \
               $out/etc/pam.d/polkit-1
+            install -Dm644 packaging/systemd/sentinel-polkit-agent.service \
+              $out/lib/systemd/user/sentinel-polkit-agent.service
+            install -Dm644 packaging/xdg-autostart/sentinel-polkit-agent.desktop \
+              $out/etc/xdg/autostart/sentinel-polkit-agent.desktop
             install -Dm644 LICENSE \
               $out/share/licenses/sentinel/LICENSE
             install -Dm644 README.md \

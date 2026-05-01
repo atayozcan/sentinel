@@ -1,0 +1,15 @@
+[package]
+name = "sentinel-token"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "HMAC-SHA256 bypass token shared between sentinel-polkit-agent and pam-sentinel"
+
+[dependencies]
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.10"

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Sentinel Polkit Authentication Agent
+Comment=Authenticates you to perform privileged tasks via the Sentinel UAC-style dialog
+Exec=/usr/lib/sentinel-polkit-agent
+Categories=System;
+NoDisplay=true
+X-GNOME-Autostart-Phase=Initialization
+# polkit only allows ONE agent per session. Restrict to compositors that
+# don't already ship their own agent.
+OnlyShowIn=COSMIC;Hyprland;sway;Wayfire;wlroots;
+NotShowIn=GNOME;KDE;XFCE;LXDE;Cinnamon;MATE;LXQt;

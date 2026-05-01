@@ -50,6 +50,12 @@ rollback() {
                         mv -f -- "$backup" "$path" || true
                     fi
                     ;;
+                ENABLED)
+                    local unit="${path#systemd:user:}"
+                    if [[ -n "${BUILD_USER:-}" ]]; then
+                        runuser -u "$BUILD_USER" -- systemctl --user disable --now "$unit" 2>/dev/null || true
+                    fi
+                    ;;
             esac
         done
     fi
@@ -111,13 +117,28 @@ fi
 [[ -f target/release/sentinel-helper      ]] || error "Build artifact missing: target/release/sentinel-helper"
 [[ -f target/release/libpam_sentinel.so   ]] || error "Build artifact missing: target/release/libpam_sentinel.so"
 
+# -------------- prior-version detection ------------------------------------
+
+PRIOR_VERSION=""
+if [[ -f "$STATE_FILE" ]]; then
+    PRIOR_VERSION="$(awk -F'\t' '$1=="VERSION"{print $2; exit}' "$STATE_FILE" || true)"
+    if [[ -n "$PRIOR_VERSION" ]]; then
+        info "Detected prior install: $PRIOR_VERSION → 0.3.0"
+    else
+        info "Detected prior install (pre-0.3.0): assuming 0.2.x → 0.3.0"
+    fi
+fi
+
 # -------------- prompts (before any system change) -------------------------
 
 INSTALL_SUDO=0
 ENABLE_SUDO_FLAG=0
+ENABLE_AGENT_FLAG=""    # "" = default, "yes" or "no" overrides
 for arg in "$@"; do
     case "$arg" in
-        --enable-sudo) ENABLE_SUDO_FLAG=1 ;;
+        --enable-sudo)         ENABLE_SUDO_FLAG=1 ;;
+        --enable-polkit-agent) ENABLE_AGENT_FLAG=yes ;;
+        --no-polkit-agent)     ENABLE_AGENT_FLAG=no ;;
     esac
 done
 if [[ $ENABLE_SUDO_FLAG -eq 1 ]]; then
@@ -127,15 +148,50 @@ elif [[ -t 0 && -t 1 ]]; then
     [[ "$reply" =~ ^[Yy]$ ]] && INSTALL_SUDO=1
 fi
 
+# Polkit agent: enabled by default. Honor explicit --no-polkit-agent. On
+# upgrade from 0.2.x, prompt interactively (the agent replaces cosmic-osd
+# / polkit-gnome / polkit-kde via Conflicts= in the unit, which is a
+# user-visible behaviour change).
+ENABLE_AGENT=1
+case "$ENABLE_AGENT_FLAG" in
+    yes) ENABLE_AGENT=1 ;;
+    no)  ENABLE_AGENT=0 ;;
+    "")
+        if [[ -n "$PRIOR_VERSION" && "$PRIOR_VERSION" =~ ^0\.2\. && -t 0 && -t 1 ]]; then
+            warn "v0.3 ships a polkit authentication agent that replaces cosmic-osd /"
+            warn "polkit-gnome / polkit-kde so polkit only has one UI to consult."
+            read -r -p "Enable Sentinel polkit agent? [Y/n] " reply
+            [[ "$reply" =~ ^[Nn]$ ]] && ENABLE_AGENT=0
+        fi
+        ;;
+esac
+
 # -------------- install ----------------------------------------------------
 
 mkdir -p "$STATE_DIR"
 
+# Record the version we're installing as the FIRST entry in the new state.
+printf 'VERSION\t0.3.0\t\n' >> "$STATE_TMP"
+
 step "Installing system files…"
 install_file 755 target/release/sentinel-helper       "$PREFIX/$LIBEXECDIR/sentinel-helper"
+install_file 755 target/release/sentinel-polkit-agent "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
 install_file 644 target/release/libpam_sentinel.so    "$PREFIX/lib/security/pam_sentinel.so"
 install_file 644 config/sentinel.conf                 "$SYSCONFDIR/security/sentinel.conf"
 install_file 644 config/polkit-1                      "$SYSCONFDIR/pam.d/polkit-1"
+install_file 644 packaging/systemd/sentinel-polkit-agent.service \
+    "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"
+
+# XDG autostart is the canonical deployment for polkit auth agents (see
+# polkit-gnome, polkit-kde). Compositors fork autostart entries as direct
+# children, so the agent inherits the graphical session's kernel
+# sessionid — which is what polkit's session_for_caller check requires.
+# A systemctl --user unit cannot satisfy that check (its parent is
+# user@1000.service, kernel sessionid != graphical session).
+if [[ $ENABLE_AGENT -eq 1 ]]; then
+    install_file 644 packaging/xdg-autostart/sentinel-polkit-agent.desktop \
+        "$SYSCONFDIR/xdg/autostart/sentinel-polkit-agent.desktop"
+fi
 
 if [[ $INSTALL_SUDO -eq 1 ]]; then
     install_file 644 config/sudo                       "$SYSCONFDIR/pam.d/sudo"
@@ -158,11 +214,14 @@ verify() {
     owner="$(stat -c '%u:%g' "$path" 2>/dev/null || echo "?:?")"
     [[ "$owner" == "0:0" ]] || error "Wrong ownership on $path: got $owner, expected 0:0 (root:root)"
 }
-verify "$PREFIX/$LIBEXECDIR/sentinel-helper"        755 exe
-verify "$PREFIX/lib/security/pam_sentinel.so"       644 regular
-verify "$SYSCONFDIR/security/sentinel.conf"         644 regular
-verify "$SYSCONFDIR/pam.d/polkit-1"                 644 regular
-[[ $INSTALL_SUDO -eq 1 ]] && verify "$SYSCONFDIR/pam.d/sudo" 644 regular
+verify "$PREFIX/$LIBEXECDIR/sentinel-helper"            755 exe
+verify "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"      755 exe
+verify "$PREFIX/lib/security/pam_sentinel.so"           644 regular
+verify "$SYSCONFDIR/security/sentinel.conf"             644 regular
+verify "$SYSCONFDIR/pam.d/polkit-1"                     644 regular
+verify "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"  644 regular
+[[ $ENABLE_AGENT -eq 1 ]] && verify "$SYSCONFDIR/xdg/autostart/sentinel-polkit-agent.desktop" 644 regular
+[[ $INSTALL_SUDO -eq 1 ]] && verify "$SYSCONFDIR/pam.d/sudo"     644 regular
 
 # -------------- commit -----------------------------------------------------
 
@@ -178,14 +237,18 @@ cat <<EOF
 Installed:
   $PREFIX/lib/security/pam_sentinel.so
   $PREFIX/$LIBEXECDIR/sentinel-helper
+  $PREFIX/$LIBEXECDIR/sentinel-polkit-agent
+  $PREFIX/lib/systemd/user/sentinel-polkit-agent.service
   $SYSCONFDIR/security/sentinel.conf
   $SYSCONFDIR/pam.d/polkit-1$([[ $INSTALL_SUDO -eq 1 ]] && printf '\n  %s' "$SYSCONFDIR/pam.d/sudo")
 
 State file:
-  $STATE_FILE
+  $STATE_FILE   (version 0.3.0)
 
 Test the helper directly:
   $PREFIX/$LIBEXECDIR/sentinel-helper --timeout 10 --randomize
+
+Polkit agent:$([[ $ENABLE_AGENT -eq 1 ]] && printf '\n  Installed as XDG autostart entry. Will launch at next graphical session start.\n  Log out and log back in to activate. Once active, polkit auth flows through Sentinel.' || printf '\n  Not installed (--no-polkit-agent). Drop config/sudo or polkit-1 references manually if needed.')
 
 To remove: pkexec ./uninstall.sh
 EOF

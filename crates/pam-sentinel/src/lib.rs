@@ -1,3 +1,4 @@
+mod agent_bypass;
 mod config;
 mod display;
 mod helper;
@@ -23,6 +24,14 @@ impl PamHooks for PamSentinel {
         _flags: PamFlag,
     ) -> PamResultCode {
         init_logger();
+
+        // Recursion-prevention: when invoked from polkit-agent-helper-1
+        // under the Sentinel polkit agent, the agent's HMAC bypass token
+        // is in the environment. If it verifies, return PAM_SUCCESS
+        // immediately and don't spawn another dialog.
+        if let Some(rc) = agent_bypass::check_agent_bypass() {
+            return rc;
+        }
 
         let service = pamh
             .get_item::<pam::items::Service>()
@@ -156,11 +165,11 @@ unsafe extern "C" {
     fn libc_getppid_raw() -> i32;
 }
 
-unsafe fn libc_getuid() -> u32 {
+pub(crate) unsafe fn libc_getuid() -> u32 {
     unsafe { libc_getuid_raw() }
 }
 
-unsafe fn libc_getppid() -> i32 {
+pub(crate) unsafe fn libc_getppid() -> i32 {
     unsafe { libc_getppid_raw() }
 }
 
@@ -175,7 +184,7 @@ unsafe fn libc_getppid() -> i32 {
 /// 2. `/proc/<ppid>/status` — the `Uid:` line, real-uid (first field).
 ///    Works even for non-login processes.
 /// 3. Fall back to our own real uid.
-fn caller_uid(ppid: i32) -> u32 {
+pub(crate) fn caller_uid(ppid: i32) -> u32 {
     if ppid > 0
         && let Ok(s) = std::fs::read_to_string(format!("/proc/{ppid}/loginuid"))
         && let Ok(uid) = s.trim().parse::<u32>()

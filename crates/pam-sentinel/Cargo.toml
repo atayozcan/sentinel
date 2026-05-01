@@ -20,5 +20,6 @@ syslog.workspace = true
 log.workspace = true
 nix.workspace = true
 anyhow.workspace = true
+sentinel-token = { path = "../sentinel-token" }
 
 [build-dependencies]

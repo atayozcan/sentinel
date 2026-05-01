@@ -1,0 +1,28 @@
+[Unit]
+Description=Sentinel polkit authentication agent
+Documentation=https://github.com/atayozcan/sentinel/wiki/Polkit-Agent
+PartOf=graphical-session.target
+After=graphical-session.target dbus.socket
+Requires=dbus.socket
+# Stop competing polkit agents when this one runs. Only one polkit agent
+# can be registered per session, so co-running them is broken anyway.
+Conflicts=cosmic-osd.service polkit-gnome-authentication-agent-1.service
+Conflicts=polkit-kde-authentication-agent-1.service xfce-polkit.service
+Conflicts=mate-polkit.service lxqt-policykit-agent.service
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.PolicyKit1.AuthenticationAgent
+ExecStart=/usr/lib/sentinel-polkit-agent
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+# `full` keeps /usr /boot /efi read-only but leaves /run and /var alone so
+# the agent can write $XDG_RUNTIME_DIR/sentinel-agent.secret.
+ProtectSystem=full
+# Don't ProtectHome — sentinel-helper (forked from this unit) reads
+# $HOME/.config for cosmic theme/config; restricting it breaks rendering.
+PrivateTmp=yes
+
+[Install]
+WantedBy=graphical-session.target
