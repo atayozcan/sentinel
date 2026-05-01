@@ -1,209 +1,316 @@
 # Sentinel
 
-A Windows UAC-like confirmation dialog for Linux, implemented as a PAM module with a libadwaita GUI. Written in modern C++23 with Wayland-only support and secure session locking.
+A Windows UAC-style confirmation dialog for Linux privilege escalation,
+delivered as a PAM module plus a libcosmic helper. Designed for the COSMIC
+desktop and `sudo-rs`.
+
+![dialog overlay](docs/screenshots/dialog-overlay.png)
+
+---
+
+> [!CAUTION]
+> **Sentinel sits in the PAM authentication path.** A misconfiguration —
+> wrong directive in `/etc/pam.d/sudo`, broken polkit policy, a bug in this
+> module — can lock you out of `sudo`, polkit, or even login. **Read the
+> "Locked out?" section *before* you install.** Always keep a root shell
+> open in another terminal during the first install, or have a recovery
+> medium (live USB, single-user mode) ready.
+>
+> This software is provided **as-is, without warranty of any kind**. The
+> author takes no responsibility for damaged systems, lost work, or any
+> other consequence of running it. See [License](#license) and the
+> `LICENSE` file (GPL-3.0 sections 15 and 16) for the full disclaimer.
+> Use it on production systems at your own risk.
+
+---
 
 ## Features
 
-- **Graphical confirmation dialog** for privilege escalation
-- **Wayland session lock** (`ext-session-lock-v1`) for true secure desktop
-  - Screen blanks completely before dialog appears
-  - Exclusive input delivery - nothing else can receive input
-  - Cannot be hidden by other windows
-  - Crash-safe - screen stays locked if helper dies
-- **Randomized button positions** to prevent automated clicking
+- **Graphical confirm/deny dialog** before any PAM-protected privilege escalation
+- **libcosmic native UI** — matches the COSMIC desktop visually and theme-wise
+- **Layer-shell overlay** — full-screen translucent backdrop with exclusive
+  keyboard focus, drawn on top of all other surfaces (`zwlr-layer-shell-v1`)
+- **Wayland-only**, designed for `cosmic-comp` and other wlroots-based compositors
+- **`sudo-rs` friendly** — drop-in via `/etc/pam.d/sudo`
+- **Randomised button positions** to deter automated clickers
 - **Configurable timeout** with auto-deny
-- **Minimum display time** to prevent instant automated clicks
-- **Per-service configuration** (sudo, su, polkit, etc.)
+- **Minimum display time** to block instant scripted clicks
+- **Per-service overrides** (`sudo`, `su`, `polkit-1`, etc.)
 - **Headless fallback** to standard password authentication
-- **Process information display** showing what's requesting privileges
-- **Syslog logging** of all confirmation attempts
+- **Transactional install/uninstall** — every system change is recorded and
+  rolled back automatically if anything fails
 
-## Requirements
+## Screenshots
 
-- **Wayland compositor** with `ext-session-lock-v1` support (Hyprland, Sway, GNOME 44+, KDE Plasma 6+)
-- **No X11 support** - this is a Wayland-only application
+| Layer-shell overlay | Randomised buttons |
+| ------------------- | ------------------ |
+| ![overlay](docs/screenshots/dialog-overlay.png) | ![randomized](docs/screenshots/dialog-randomized.png) |
 
-## Dependencies
+> If the images above are missing, the project hasn't shipped them yet —
+> they live in `docs/screenshots/`.
 
-### Build Dependencies
+## Prerequisites
+
+**Runtime**
+
+| Component                | Why                                              |
+| ------------------------ | ------------------------------------------------ |
+| Linux + libpam           | The PAM module loads into your auth stack        |
+| Wayland compositor with  | The helper renders its overlay there             |
+| `zwlr-layer-shell-v1`    | Supported by cosmic-comp, Hyprland, Sway, KWin   |
+| `libxkbcommon`, `mesa`,  | libcosmic / iced rendering stack                 |
+| `fontconfig`, `freetype` |                                                  |
+| `vulkan-icd-loader`      | wgpu prefers Vulkan; software fallback works too |
+
+**For source builds**
+
+| Component             | Version |
+| --------------------- | ------- |
+| Rust + Cargo (stable) | ≥ 1.85  |
+| `pkg-config`          | any     |
+| `wayland-protocols`   | any     |
+| pam dev headers       | any     |
+
+The exact toolchain is pinned in `rust-toolchain.toml`. Rustup will install
+the right version automatically.
+
+**Compatibility**
+
+| Compositor   | Status        |
+| ------------ | ------------- |
+| cosmic-comp  | tested        |
+| Hyprland     | should work   |
+| Sway         | should work   |
+| KWin/Wayland | should work   |
+| GNOME/Mutter | **no** — Mutter does not implement `zwlr-layer-shell-v1`. Use `--windowed`. |
+| X11 only     | not supported |
+
+## Install
+
+### Arch Linux (AUR)
 
 ```bash
-# Debian/Ubuntu
-sudo apt install meson ninja-build g++ libpam0g-dev libgtk-4-dev libadwaita-1-dev libgtk4-layer-shell-dev
-
-# Fedora
-sudo dnf install meson ninja-build gcc-c++ pam-devel gtk4-devel libadwaita-devel gtk4-layer-shell-devel
-
-# Arch
-sudo pacman -S meson ninja gcc pam gtk4 libadwaita gtk4-layer-shell
+yay -S sentinel        # latest release
+# or
+yay -S sentinel-git    # main branch
 ```
 
-## Building
+You can also clone and build the PKGBUILD locally:
 
 ```bash
-meson setup build --prefix=/usr --sysconfdir=/etc --libexecdir=lib
-meson compile -C build
+git clone https://github.com/atayozcan/sentinel
+cd sentinel/packaging/arch
+makepkg -si
 ```
 
-## Installation
+### Debian / Ubuntu
+
+A `.deb` is published with each release.
 
 ```bash
-sudo meson install -C build
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.2.0_amd64.deb
+sudo apt install ./sentinel_0.2.0_amd64.deb
 ```
 
-This installs:
-- `/usr/lib/security/pam_sentinel.so` - The PAM module
-- `/usr/lib/sentinel-helper` - The GUI helper
-- `/etc/security/sentinel.conf` - Configuration file
-- `/etc/pam.d/polkit-1` - PAM configuration for polkit (graphical privilege prompts)
+### Fedora / openSUSE / RHEL
+
+A `.rpm` is published with each release.
+
+```bash
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.2.0-1.x86_64.rpm
+sudo dnf install ./sentinel-0.2.0-1.x86_64.rpm     # Fedora
+sudo zypper install ./sentinel-0.2.0-1.x86_64.rpm  # openSUSE
+```
+
+### NixOS
+
+A flake is provided at the repo root:
+
+```bash
+nix run github:atayozcan/sentinel#sentinel-helper -- --timeout 10 --randomize
+```
+
+For a system module, see `nix/module.nix`.
+
+### Generic Linux (prebuilt tarball)
+
+```bash
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.2.0-x86_64-linux.tar.gz
+tar xf sentinel-0.2.0-x86_64-linux.tar.gz
+cd sentinel-0.2.0
+pkexec ./install.sh
+```
+
+### From source
+
+```bash
+git clone https://github.com/atayozcan/sentinel
+cd sentinel
+just install        # builds, then runs install.sh under pkexec
+# or, manually:
+pkexec ./install.sh
+```
+
+`install.sh` is **transactional**: every change is logged to
+`/var/lib/sentinel/install.state`, and any failure mid-install rolls back
+to the exact pre-install state. To enable Sentinel for `sudo` (which is
+prompted interactively), pass `--enable-sudo`.
+
+To remove:
+
+```bash
+pkexec ./uninstall.sh           # interactive
+pkexec ./uninstall.sh --yes     # non-interactive
+```
+
+`uninstall.sh` reads the install state file and restores any pre-existing
+files it backed up (`polkit-1`, `sudo`, `sentinel.conf`).
 
 ## Configuration
 
-### PAM Configuration
+Edit `/etc/security/sentinel.conf` (TOML):
 
-Add the module to the services you want to protect. Edit the appropriate file in `/etc/pam.d/`:
-
-#### For sudo (`/etc/pam.d/sudo`)
-
-```
-# Add BEFORE the existing auth lines
-auth    sufficient  pam_sentinel.so
-
-# Existing lines follow
-auth    include     system-auth
-...
-```
-
-#### For su (`/etc/pam.d/su`)
-
-```
-auth    sufficient  pam_sentinel.so
-auth    sufficient  pam_rootok.so
-...
-```
-
-#### For polkit (`/etc/pam.d/polkit-1`)
-
-This file is installed automatically. If you need to customize it:
-
-```
-auth    sufficient  pam_sentinel.so
-auth    include     system-auth
-account include     system-auth
-password include    system-auth
-session include     system-auth
-```
-
-### Module Configuration
-
-Edit `/etc/security/sentinel.conf`:
-
-```ini
+```toml
 [general]
-# Enable globally
-enabled = yes
-
-# Timeout before auto-deny (seconds)
+enabled = true
 timeout = 30
+randomize_buttons = true
+headless_action = "password"  # "allow" | "deny" | "password"
+show_process_info = true
+log_attempts = true
+min_display_time_ms = 500
 
-# Randomize Allow/Deny button positions
-randomize_buttons = yes
+[appearance]
+title = "Authentication Required"
+message = 'The application "%p" is requesting elevated privileges.'
+secondary = 'Click "Allow" to continue or "Deny" to cancel.'
 
-# What to do when no display is available
-# Options: allow, deny, password
-headless_action = password
-
-# Show the executable path of the requesting process
-show_process_info = yes
-
-# Log all attempts to syslog
-log_attempts = yes
-
-# Minimum time dialog must be shown (milliseconds)
-min_display_time = 500
-
-[services]
-# Per-service overrides: enabled,timeout,randomize
-# Use 'default' to inherit from [general]
-sudo = yes,30,yes
-su = yes,30,yes
-polkit-1 = yes,30,yes
-login = no,default,default
+[services.sudo]
+enabled = true
+timeout = 30
+randomize = true
 ```
 
-## How It Works
+Substitutions inside `appearance.message` and `appearance.secondary`:
 
-1. When a PAM-enabled application (sudo, su, etc.) requests authentication, the PAM module is invoked
-2. The module checks if a graphical display is available
-3. If yes, it spawns the helper application which locks the session and shows the confirmation dialog
-4. The user must:
-   - Wait for the minimum display time
-   - Click the "Allow" button (which may be in a random position)
-5. The result is passed back to the PAM module
-6. If no display is available, it falls back to standard password authentication
+| Token | Meaning |
+| ----- | ------- |
+| `%u`  | User    |
+| `%s`  | Service |
+| `%p`  | Requesting process |
+| `%%`  | Literal `%` |
 
-## Security Considerations
+## PAM wiring
 
-### Session Lock
+### sudo / sudo-rs
 
-The session lock protocol (`ext-session-lock-v1`) ensures:
-- Only the confirmation dialog can receive input
-- Other applications cannot overlay or intercept the dialog
-- The screen stays locked even if the helper crashes
+Both use `/etc/pam.d/sudo`. Add the module before the password line:
 
-### Button Randomization
+```
+#%PAM-1.0
+auth       sufficient pam_sentinel.so
+auth       include    system-auth
+account    include    system-auth
+password   include    system-auth
+session    include    system-auth
+```
 
-By randomizing button positions, automated clicking scripts cannot reliably click "Allow" without human interaction.
+`sufficient` means: if Sentinel says ALLOW, no password is required.
+If it says DENY (or there's no display), PAM continues to the next module.
 
-### Minimum Display Time
+### polkit
 
-Prevents scripts from instantly clicking the button before a human can read the dialog.
+`/etc/pam.d/polkit-1` is installed automatically.
 
-### Headless Fallback
-
-In SSH sessions or other non-graphical environments, the module can be configured to:
-- `allow` - Skip confirmation (NOT RECOMMENDED)
-- `deny` - Always deny (may lock you out of SSH sudo)
-- `password` - Fall back to password authentication (RECOMMENDED)
-
-## Troubleshooting
-
-### "No Wayland display available"
-
-The helper requires a Wayland compositor. Make sure `WAYLAND_DISPLAY` is set in the PAM environment. X11/XWayland is not supported.
-
-### Locked out of sudo
-
-Boot into single-user mode or use a live USB to edit `/etc/pam.d/sudo` and comment out or remove the `pam_sentinel.so` line.
-
-### Debug logging
-
-Check syslog/journal for sentinel messages:
+## Testing the helper
 
 ```bash
-journalctl -t pam_sentinel
+just helper-test
+# or:
+target/release/sentinel-helper --timeout 10 --randomize \
+    --process-exe /usr/bin/sudo
 ```
 
-## Testing
+Pass `--windowed` to render as a normal xdg-toplevel instead of a layer-shell
+overlay (useful for debugging on compositors without `zwlr-layer-shell-v1`).
 
-Before adding to your actual PAM configuration, test the helper directly:
+The helper prints `ALLOW`, `DENY`, or `TIMEOUT` to stdout and exits with
+0 on allow, 1 otherwise.
 
-```bash
-# With session lock (recommended - provides full security)
-/usr/lib/sentinel-helper --timeout 10 --randomize
+## Headless / SSH / TTY behaviour
 
-# Without session lock (for testing in windowed mode)
-/usr/lib/sentinel-helper --timeout 10 --randomize --no-session-lock
+The helper itself is graphical-only — when `$WAYLAND_DISPLAY` is unset
+(SSH session, console login) it prints `DENY` and exits.
+
+The fallback happens **at the PAM layer**: `pam_sentinel.so` reads
+`headless_action` from `sentinel.conf`. With the default
+`headless_action = "password"`, the PAM stack continues to the next module
+(`pam_unix`) and prompts for a password as normal. So your SSH login or
+console `sudo` keeps working unchanged.
+
+## Locked out?
+
+If `pam_sentinel.so` ever blocks login or sudo:
+
+1. **Boot into single-user mode** (add `init=/bin/bash` to the kernel
+   command line in your boot loader), or
+2. **Boot a live USB** and chroot into the install, or
+3. **Switch to another TTY** (Ctrl+Alt+F2..F6) and log in as another user
+   that doesn't go through Sentinel,
+
+then remove the offending line from `/etc/pam.d/sudo` (or
+`/etc/pam.d/system-auth`, or `/etc/pam.d/polkit-1`). If you have the
+install-state file, `pkexec /path/to/sentinel-source/uninstall.sh --yes`
+will undo everything cleanly.
+
+Practical advice: **before you install, open a second terminal as root
+(`pkexec bash`)** and keep it open until you've verified `sudo` works.
+
+## Project layout
+
 ```
-
-This will show the dialog and print the result (ALLOW/DENY/TIMEOUT) to stdout.
-
-**Note**: When using session lock, your screen will briefly blank and the dialog will have exclusive input. Press Escape or click Deny to exit.
+.
+├── Cargo.toml                  # Cargo workspace
+├── crates/
+│   ├── pam-sentinel/           # cdylib → /usr/lib/security/pam_sentinel.so
+│   └── sentinel-helper/        # bin    → /usr/lib/sentinel-helper
+├── config/
+│   ├── sentinel.conf           # TOML configuration → /etc/security/
+│   ├── polkit-1                # /etc/pam.d/polkit-1
+│   └── sudo                    # optional /etc/pam.d/sudo
+├── packaging/
+│   ├── arch/PKGBUILD           # AUR release
+│   ├── arch/PKGBUILD-git       # AUR -git package
+│   ├── debian/                 # cargo-deb metadata
+│   ├── rpm/                    # cargo-generate-rpm metadata
+│   └── FLATPAK.md              # why no Flatpak
+├── nix/                        # flake module
+├── docs/screenshots/           # README assets
+├── scripts/build-release.sh    # builds the release tarballs
+├── .github/workflows/release.yml
+├── install.sh / uninstall.sh   # transactional source-build installer
+└── justfile                    # build / lint / install recipes
+```
 
 ## License
 
-GPL-3.0-or-later
+**GPL-3.0-or-later.** See [`LICENSE`](LICENSE) for the full text.
 
-## Acknowledgments
+GPL-3.0 ships with explicit no-warranty and limitation-of-liability terms:
 
-AI was used partly for development of this project.
+> **15. Disclaimer of Warranty.**
+> THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW.
+> EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES
+> PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY OF ANY KIND […].
+>
+> **16. Limitation of Liability.**
+> IN NO EVENT […] WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY […], BE LIABLE TO
+> YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL
+> DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM […].
+
+You run Sentinel at your own risk.
+
+## Contributing
+
+Issues and PRs welcome. Please run `cargo fmt`, `cargo clippy --workspace
+-- -D warnings`, and `just helper-test` before submitting.

@@ -1,0 +1,101 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            deb-arch: amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpam0g-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            pkg-config
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deb and cargo-generate-rpm
+        run: |
+          cargo install --locked cargo-deb
+          cargo install --locked cargo-generate-rpm
+
+      - name: Resolve version
+        id: ver
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build tarballs
+        run: ./scripts/build-release.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Build .deb
+        run: |
+          cargo deb --no-build -p sentinel-helper
+          mkdir -p dist
+          mv target/debian/*.deb dist/
+
+      - name: Build .rpm
+        run: |
+          # cargo-generate-rpm reads paths relative to the workspace root
+          cd "$GITHUB_WORKSPACE"
+          cargo generate-rpm -p crates/sentinel-helper --output dist/
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-${{ steps.ver.outputs.version }}-${{ matrix.arch }}
+          path: dist/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+
+      - name: Flatten
+        run: |
+          mkdir -p dist
+          find artefacts -type f \( -name '*.tar.gz' -o -name '*.sha256' -o -name '*.deb' -o -name '*.rpm' \) -exec mv -t dist/ {} +
+          ls -la dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Sentinel v$v" \
+            --notes-file .github/release-notes/v$v.md \
+            dist/*

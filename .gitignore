@@ -1,31 +1,36 @@
-# Build directories
-build/
-buildDir/
-pkg/
+# Rust
+/target/
+/crates/*/target/
+**/*.rs.bk
+Cargo.lock.bak
 
-# Meson
-.ninja_log
-.ninja_deps
-subprojects/
-
-# IDE
+# IDE / editor cruft
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+.DS_Store
 
-# Compiled files
-*.o
-*.so
-*.a
-
-# Package builds
+# AUR makepkg artefacts (root-level only — do not match crates/*/src)
+/pkg/
+/src/
 *.pkg.tar.zst
 *.pkg.tar.xz
-pkg/
-src/
+/packaging/arch/*.tar.gz
+/packaging/arch/sentinel-*
+
+# Release artefacts
+/dist/
+*.tar.gz
+*.tar.xz
+*.sha256
 
 # Debug
 core
 *.core
+*.log
+
+# Local task scratch
+/TODO
+/.notes/
