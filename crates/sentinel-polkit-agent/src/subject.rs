@@ -1,12 +1,22 @@
 //! Build the `(sa{sv})` "subject" passed to
-//! `Authority.RegisterAuthenticationAgent`. polkit insists that the
-//! session passed in matches the session it sees our process running in,
-//! so we ask logind for the session that owns our PID rather than reading
-//! `XDG_SESSION_ID` (which isn't reliably set under `systemctl --user`).
+//! `Authority.RegisterAuthenticationAgent`. We always register as a
+//! `unix-session` subject scoped to the current user's session.
+//!
+//! Resolution order (none of these require D-Bus calls — `GetSessionByPID`
+//! on logind requires polkit authorization, which an unprivileged agent
+//! doesn't have):
+//!
+//! 1. `--session-id` CLI override.
+//! 2. `XDG_SESSION_ID` env var (set by `pam_systemd` at login, propagated
+//!    through compositors that import login env into XDG autostart
+//!    children).
+//! 3. `/proc/self/sessionid` (kernel audit subsystem; set by
+//!    `audit_setloginuid` at login and inherited through forks). For the
+//!    agent under XDG autostart, this matches the compositor's sessionid
+//!    — exactly what polkit's session-equality check needs.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
-use zbus::Connection;
 use zvariant::OwnedValue;
 
 #[derive(Debug, serde::Serialize, zvariant::Type)]
@@ -15,64 +25,34 @@ pub struct Subject {
     pub details: HashMap<String, OwnedValue>,
 }
 
-#[zbus::proxy(
-    interface = "org.freedesktop.login1.Manager",
-    default_service = "org.freedesktop.login1",
-    default_path = "/org/freedesktop/login1"
-)]
-trait LoginManager {
-    fn get_session_by_pid(&self, pid: u32) -> zbus::Result<zvariant::OwnedObjectPath>;
-}
-
-#[zbus::proxy(
-    interface = "org.freedesktop.login1.Session",
-    default_service = "org.freedesktop.login1"
-)]
-trait LoginSession {
-    #[zbus(property, name = "Id")]
-    fn id(&self) -> zbus::Result<String>;
-}
-
-/// Resolve the session id by asking logind for our own PID's session.
-/// CLI override wins if set.
-async fn resolve_session_id(
-    conn: &Connection,
-    override_value: Option<&str>,
-) -> Result<String> {
+fn resolve_session_id(override_value: Option<&str>) -> Result<String> {
     if let Some(s) = override_value {
         return Ok(s.to_string());
     }
-    let manager = LoginManagerProxy::new(conn)
-        .await
-        .context("LoginManager proxy")?;
-    let pid = std::process::id();
-    let path = manager
-        .get_session_by_pid(pid)
-        .await
-        .with_context(|| format!("logind GetSessionByPID({pid})"))?;
-    let session = LoginSessionProxy::builder(conn)
-        .path(path.into_inner())?
-        .build()
-        .await?;
-    let id = session.id().await.context("read Session.Id")?;
-    if id.is_empty() {
-        bail!("logind returned empty session id for pid {pid}");
+    if let Ok(s) = std::env::var("XDG_SESSION_ID") {
+        if !s.is_empty() {
+            return Ok(s);
+        }
     }
-    Ok(id)
+    if let Ok(s) = std::fs::read_to_string("/proc/self/sessionid") {
+        let s = s.trim();
+        if !s.is_empty() && s != "4294967295" {
+            return Ok(s.to_string());
+        }
+    }
+    bail!(
+        "could not resolve session id; set XDG_SESSION_ID or pass --session-id. \
+         (Hint: this agent must run inside a graphical session — typically \
+         autostarted by your compositor via /etc/xdg/autostart/.)"
+    );
 }
 
-pub async fn current(
-    conn: &Connection,
-    session_id_override: Option<&str>,
-) -> Result<Subject> {
-    let session_id = resolve_session_id(conn, session_id_override)
-        .await
-        .context("resolve session id")?;
+pub fn current(session_id_override: Option<&str>) -> Result<Subject> {
+    let session_id = resolve_session_id(session_id_override)?;
     let mut details = HashMap::new();
     details.insert(
         "session-id".to_string(),
-        OwnedValue::try_from(zvariant::Value::from(session_id.clone()))
-            .context("wrap session-id")?,
+        OwnedValue::try_from(zvariant::Value::from(session_id.clone()))?,
     );
     Ok(Subject {
         kind: "unix-session".to_string(),
