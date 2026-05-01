@@ -1,0 +1,68 @@
+[package]
+name = "sentinel-helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "COSMIC-native confirmation dialog for sentinel privilege escalation"
+
+[[bin]]
+name = "sentinel-helper"
+path = "src/main.rs"
+
+[dependencies]
+libcosmic = { git = "https://github.com/pop-os/libcosmic.git", branch = "master", default-features = false, features = ["wayland", "winit", "tokio", "multi-window"] }
+clap = { version = "4", features = ["derive"] }
+rand = "0.10.1"
+serde.workspace = true
+log.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+
+# ---------------------------------------------------------------------------
+# Distribution packaging metadata
+# ---------------------------------------------------------------------------
+# Debian/Ubuntu .deb via `cargo deb`. Builds both binaries via the workspace
+# beforehand: `cargo build --release --workspace && cargo deb --no-build`.
+[package.metadata.deb]
+name = "sentinel"
+maintainer = "Atay Özcan <atay@oezcan.me>"
+copyright = "2025, Atay Özcan"
+license-file = ["../../LICENSE", "0"]
+extended-description = """
+A Windows UAC-style confirmation dialog for Linux privilege escalation,
+delivered as a PAM module plus a libcosmic helper. Wayland-only; designed
+for cosmic-comp and other wlroots-based compositors with zwlr-layer-shell-v1
+support."""
+section = "admin"
+priority = "optional"
+depends = "libc6, libpam0g, libwayland-client0, libxkbcommon0, libfontconfig1, libfreetype6, libvulkan1, mesa-vulkan-drivers"
+assets = [
+    ["../../target/release/sentinel-helper",       "usr/lib/sentinel-helper",                 "755"],
+    ["../../target/release/libpam_sentinel.so",    "usr/lib/security/pam_sentinel.so",        "644"],
+    ["../../config/sentinel.conf",                 "etc/security/sentinel.conf",              "644"],
+    ["../../config/polkit-1",                      "etc/pam.d/polkit-1",                      "644"],
+    ["../../README.md",                            "usr/share/doc/sentinel/README.md",        "644"],
+]
+conf-files = [
+    "/etc/security/sentinel.conf",
+    "/etc/pam.d/polkit-1",
+]
+
+# RPM via `cargo generate-rpm`. Same prerequisite: `cargo build --release --workspace`.
+[package.metadata.generate-rpm]
+name = "sentinel"
+summary = "UAC-style confirmation dialog for Linux privilege escalation"
+license = "GPL-3.0-or-later"
+url = "https://github.com/atayozcan/sentinel"
+requires = { pam = "*", "libxkbcommon" = "*", fontconfig = "*", freetype = "*", "mesa-libGL" = "*", "vulkan-loader" = "*" }
+assets = [
+    { source = "target/release/sentinel-helper",     dest = "/usr/lib/sentinel-helper",          mode = "755" },
+    { source = "target/release/libpam_sentinel.so",  dest = "/usr/lib/security/pam_sentinel.so", mode = "644" },
+    { source = "config/sentinel.conf",               dest = "/etc/security/sentinel.conf",       mode = "644", config = true },
+    { source = "config/polkit-1",                    dest = "/etc/pam.d/polkit-1",               mode = "644", config = true },
+    { source = "README.md",                          dest = "/usr/share/doc/sentinel/README.md", mode = "644", doc = true },
+    { source = "LICENSE",                            dest = "/usr/share/licenses/sentinel/LICENSE", mode = "644", doc = true },
+]
