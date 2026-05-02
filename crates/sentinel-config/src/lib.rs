@@ -125,6 +125,8 @@ pub struct Document {
     #[serde(default)]
     pub appearance: Appearance,
     #[serde(default)]
+    pub audio: Audio,
+    #[serde(default)]
     pub services: HashMap<String, ServiceOverride>,
 }
 
@@ -170,6 +172,31 @@ pub struct Appearance {
     pub secondary: String,
 }
 
+/// UAC-style audio cue when the dialog appears. Optional; respects
+/// the freedesktop sound naming spec (so the user's
+/// system theme controls the actual sample).
+#[derive(Debug, Clone, Deserialize)]
+pub struct Audio {
+    /// Freedesktop sound name (NOT a file path) played when the
+    /// dialog appears. Empty string = silent. Common names:
+    /// `dialog-warning`, `bell`, `message`, `dialog-question`.
+    /// See <https://specifications.freedesktop.org/sound-naming-spec/>.
+    #[serde(default = "default_sound_name")]
+    pub sound_name: String,
+}
+
+impl Default for Audio {
+    fn default() -> Self {
+        Self {
+            sound_name: default_sound_name(),
+        }
+    }
+}
+
+fn default_sound_name() -> String {
+    "dialog-warning".to_string()
+}
+
 impl Default for Appearance {
     fn default() -> Self {
         Self {
@@ -190,8 +217,8 @@ pub struct ServiceOverride {
 }
 
 /// Effective config for a single PAM service after applying overrides
-/// on top of `[general]` + `[appearance]`. This is what consumers
-/// actually drive the dialog with.
+/// on top of `[general]` + `[appearance]` + `[audio]`. This is what
+/// consumers actually drive the dialog with.
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
     pub enabled: bool,
@@ -204,6 +231,10 @@ pub struct ServiceConfig {
     pub title: String,
     pub message: String,
     pub secondary: String,
+    /// Mirrors `[audio].sound_name`. Carried on ServiceConfig so
+    /// consumers don't need a second config read; the value isn't
+    /// per-service overridable (audio is a global UX choice).
+    pub sound_name: String,
 }
 
 impl Document {
@@ -211,6 +242,7 @@ impl Document {
         Self {
             general: General::default(),
             appearance: Appearance::default(),
+            audio: Audio::default(),
             services: HashMap::new(),
         }
     }
@@ -230,6 +262,7 @@ impl Document {
             title: self.appearance.title.clone(),
             message: self.appearance.message.clone(),
             secondary: self.appearance.secondary.clone(),
+            sound_name: self.audio.sound_name.clone(),
         };
         if let Some(over) = self.services.get(service) {
             if let Some(v) = over.enabled {
@@ -518,6 +551,7 @@ mod tests {
         Document {
             general: General::default(),
             appearance: Appearance::default(),
+            audio: Audio::default(),
             services,
         }
     }

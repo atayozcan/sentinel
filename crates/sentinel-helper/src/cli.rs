@@ -71,6 +71,13 @@ pub struct Args {
     /// heuristic, mainly useful for testing.
     #[arg(long, conflicts_with = "windowed")]
     pub layer_shell: bool,
+
+    /// Freedesktop sound name to play when the dialog appears
+    /// (UAC-style audio cue). Empty string = silent. Resolved via
+    /// `canberra-gtk-play` if installed; otherwise no sound is
+    /// played and we don't error out.
+    #[arg(long, default_value = "")]
+    pub sound_name: String,
 }
 
 #[derive(Subcommand, Debug, Clone)]

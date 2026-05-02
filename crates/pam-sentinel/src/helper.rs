@@ -23,6 +23,9 @@ pub struct HelperRequest<'a> {
     pub formatted_title: &'a str,
     pub formatted_message: &'a str,
     pub formatted_secondary: &'a str,
+    /// Freedesktop sound name to pass to the helper, or empty for
+    /// silent. Sourced from `[audio].sound_name` in the config.
+    pub sound_name: &'a str,
     pub target_uid: u32,
     pub requesting_pid: i32,
 }
@@ -104,6 +107,10 @@ fn child_exec(req: &HelperRequest<'_>, write_fd: OwnedFd) -> ! {
     push(&mut argv, &req.cfg.timeout.to_string());
     push(&mut argv, "--min-time");
     push(&mut argv, &req.cfg.min_display_time_ms.to_string());
+    if !req.sound_name.is_empty() {
+        push(&mut argv, "--sound-name");
+        push(&mut argv, req.sound_name);
+    }
     if req.cfg.randomize_buttons {
         push(&mut argv, "--randomize");
     }

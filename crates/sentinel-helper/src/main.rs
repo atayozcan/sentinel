@@ -1,4 +1,5 @@
 mod app;
+mod audio;
 mod cli;
 mod i18n;
 
@@ -25,6 +26,12 @@ fn main() -> anyhow::Result<()> {
         println!("DENY");
         std::process::exit(1);
     }
+
+    // Fire the UAC-style audio cue before starting the cosmic event
+    // loop — gives the user immediate auditory feedback that
+    // something needs their attention, even if the dialog hasn't
+    // painted yet. Empty sound_name = no-op.
+    audio::play_named(&args.sound_name);
 
     // Decide layer-shell vs xdg-toplevel rendering. Priority:
     //   1. --windowed   → always windowed.

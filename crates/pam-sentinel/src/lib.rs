@@ -150,6 +150,7 @@ fn spawn_dialog(
         formatted_title: &formatted_title,
         formatted_message: &formatted_message,
         formatted_secondary: &formatted_secondary,
+        sound_name: &cfg.sound_name,
         target_uid: requesting_uid,
         requesting_pid,
     };

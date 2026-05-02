@@ -29,6 +29,7 @@ pub struct Request {
     pub timeout: u64,
     pub min_time: u64,
     pub randomize: bool,
+    pub sound_name: String,
     pub process_exe: Option<String>,
     pub process_cmdline: Option<String>,
     pub process_pid: Option<i32>,
@@ -89,6 +90,7 @@ impl Request {
             timeout: args.cfg.timeout as u64,
             min_time: args.cfg.min_display_time_ms as u64,
             randomize: args.cfg.randomize_buttons,
+            sound_name: args.cfg.sound_name.clone(),
             process_exe: args.process_exe.map(str::to_string),
             process_cmdline: args.process_cmdline.map(str::to_string),
             process_pid: args.process_pid,
@@ -112,6 +114,9 @@ pub async fn run(req: Request) -> Result<Outcome, HelperError> {
         .arg(req.timeout.to_string())
         .arg("--min-time")
         .arg(req.min_time.to_string());
+    if !req.sound_name.is_empty() {
+        cmd.arg("--sound-name").arg(&req.sound_name);
+    }
     if req.randomize {
         cmd.arg("--randomize");
     }
