@@ -88,7 +88,7 @@ pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
     let resp = std::str::from_utf8(&buf[..n]).unwrap_or("").trim();
     match resp {
         "OK" => {
-            log::info!("agent_bypass: approval accepted (uid {uid})");
+            log::info!("event=auth.allow source=bypass uid={uid}");
             Some(PamResultCode::PAM_SUCCESS)
         }
         other => {

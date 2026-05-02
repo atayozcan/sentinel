@@ -95,8 +95,8 @@ async fn handle_one(mut stream: UnixStream, queue: ApprovalQueue) -> Result<()> 
     match queue.take_one().await {
         Some(approval) => {
             info!(
-                "agent socket: approving auth for action {} (peer pid {peer_pid})",
-                approval.action_id
+                "event=auth.allow source=agent.bypass action={} peer_pid={peer_pid}",
+                sentinel_config::log_kv::quote(&approval.action_id)
             );
             stream.write_all(b"OK\n").await.context("write OK")?;
         }

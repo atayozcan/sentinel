@@ -24,8 +24,10 @@ use helper::{HelperRequest, HelperResult, run as run_helper};
 use pam::constants::{PamFlag, PamResultCode};
 use pam::module::{PamHandle, PamHooks};
 use proc_info::ProcessInfo;
+use sentinel_config::log_kv::quote as q;
 use sentinel_config::{HeadlessAction, ServiceConfig, format_message, load};
 use std::ffi::CStr;
+use std::time::Instant;
 use syslog::{BasicLogger, Facility, Formatter3164};
 
 const MODULE_NAME: &str = "pam_sentinel";
@@ -101,13 +103,21 @@ fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultC
     match cfg.headless_action {
         HeadlessAction::Allow => {
             if cfg.log_attempts {
-                log::warn!("{MODULE_NAME}: no display, allowing (service {service}, user {user})");
+                log::warn!(
+                    "event=auth.allow source=headless user={} service={}",
+                    q(user),
+                    q(service)
+                );
             }
             PamResultCode::PAM_SUCCESS
         }
         HeadlessAction::Deny => {
             if cfg.log_attempts {
-                log::info!("{MODULE_NAME}: no display, denying (service {service}, user {user})");
+                log::info!(
+                    "event=auth.deny source=headless user={} service={}",
+                    q(user),
+                    q(service)
+                );
             }
             PamResultCode::PAM_AUTH_ERR
         }
@@ -149,21 +159,35 @@ fn spawn_dialog(
         requesting_pid,
     };
 
+    let dialog_started = Instant::now();
     let result = run_helper(&req);
+    let latency_ms = dialog_started.elapsed().as_millis();
 
     if cfg.log_attempts {
         match &result {
             Ok(HelperResult::Allow) => log::info!(
-                "{MODULE_NAME}: user {user}, service {service}, process {}: ALLOW",
-                process.name
+                "event=auth.allow source=dialog user={} service={} process={} uid={} latency_ms={}",
+                q(user),
+                q(service),
+                q(&process.name),
+                requesting_uid,
+                latency_ms
             ),
             Ok(HelperResult::Deny) => log::info!(
-                "{MODULE_NAME}: user {user}, service {service}, process {}: DENY",
-                process.name
+                "event=auth.deny source=dialog user={} service={} process={} uid={} latency_ms={}",
+                q(user),
+                q(service),
+                q(&process.name),
+                requesting_uid,
+                latency_ms
             ),
-            Err(e) => {
-                log::warn!("{MODULE_NAME}: helper error for user {user}, service {service}: {e}")
-            }
+            Err(e) => log::warn!(
+                "event=auth.error source=dialog user={} service={} error={} latency_ms={}",
+                q(user),
+                q(service),
+                q(&e.to_string()),
+                latency_ms
+            ),
         }
     }
 

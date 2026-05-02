@@ -265,6 +265,50 @@ pub const DEFAULT_TITLE: &str = "Authentication Required";
 pub const DEFAULT_MESSAGE: &str = "The application \"%p\" is requesting elevated privileges.";
 pub const DEFAULT_SECONDARY: &str = "Click \"Allow\" to continue or \"Deny\" to cancel.";
 
+/// Logfmt-style helpers for structured audit log lines.
+///
+/// We intentionally don't pull in a logfmt crate — the format is
+/// trivial and the helper is two functions. The output goes to
+/// syslog via the existing `log::info!` etc. calls, lands in the
+/// systemd journal, and is queryable with `journalctl -t pam_sentinel
+/// -t sentinel-polkit-agent --output=json` (the line ends up in the
+/// `MESSAGE` field; downstream tooling can split on whitespace +
+/// `key=value`).
+///
+/// # Convention
+///
+/// Auth-outcome events use `event=auth.{allow,deny,timeout,error}`
+/// plus a `source=` discriminator (`dialog` / `bypass` / `headless` /
+/// `agent` / `agent.bypass`). Diagnostic messages stay unstructured.
+pub mod log_kv {
+    /// Quote a value for logfmt: bare token if it contains no
+    /// whitespace / `"` / `=`, otherwise wrapped in double quotes
+    /// with internal `"` and `\` escaped. Empty values become `""`
+    /// so they're visually distinguishable from missing keys.
+    pub fn quote(value: &str) -> String {
+        if value.is_empty() {
+            return "\"\"".into();
+        }
+        let needs_quoting = value
+            .chars()
+            .any(|c| c.is_whitespace() || c == '"' || c == '=');
+        if !needs_quoting {
+            return value.to_string();
+        }
+        let mut out = String::with_capacity(value.len() + 2);
+        out.push('"');
+        for c in value.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                _ => out.push(c),
+            }
+        }
+        out.push('"');
+        out
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -456,5 +500,44 @@ mod tests {
         let doc = Document::load_from(&path);
         let _ = std::fs::remove_file(&path);
         assert_eq!(doc.general.timeout, 12);
+    }
+
+    // ---- log_kv::quote ---------------------------------------------------
+
+    #[test]
+    fn log_kv_bare_token_unquoted() {
+        assert_eq!(log_kv::quote("alice"), "alice");
+        assert_eq!(log_kv::quote("/usr/bin/sudo"), "/usr/bin/sudo");
+        assert_eq!(log_kv::quote("polkit-1"), "polkit-1");
+    }
+
+    #[test]
+    fn log_kv_whitespace_gets_quoted() {
+        assert_eq!(log_kv::quote("hello world"), "\"hello world\"");
+        assert_eq!(log_kv::quote("a\tb"), "\"a\tb\"");
+    }
+
+    #[test]
+    fn log_kv_internal_quotes_escaped() {
+        assert_eq!(log_kv::quote("a\"b"), "\"a\\\"b\"");
+    }
+
+    #[test]
+    fn log_kv_empty_becomes_quoted_empty() {
+        // Distinguishes "key=" from "key" — the latter would parse
+        // ambiguously in some logfmt implementations.
+        assert_eq!(log_kv::quote(""), "\"\"");
+    }
+
+    #[test]
+    fn log_kv_equals_sign_gets_quoted() {
+        // = inside a value would otherwise look like a key boundary.
+        assert_eq!(log_kv::quote("a=b"), "\"a=b\"");
+    }
+
+    #[test]
+    fn log_kv_backslash_escaped() {
+        assert_eq!(log_kv::quote("a\\b"), "a\\b"); // bare backslash without quoting trigger stays
+        assert_eq!(log_kv::quote("a b\\c"), "\"a b\\\\c\""); // gets escaped when wrapping
     }
 }

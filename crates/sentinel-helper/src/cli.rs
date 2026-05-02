@@ -59,9 +59,18 @@ pub struct Args {
     pub randomize: bool,
 
     /// Render as a regular xdg-toplevel window instead of a layer-shell
-    /// overlay. Debugging/headless-testing only.
+    /// overlay. Use this on compositors without `zwlr-layer-shell-v1`
+    /// (notably GNOME/Mutter). Also auto-selected when
+    /// `XDG_CURRENT_DESKTOP` matches a known-bad compositor — see
+    /// `compositor_lacks_layer_shell()` in main.rs.
     #[arg(long)]
     pub windowed: bool,
+
+    /// Force the layer-shell path even on compositors detected as
+    /// lacking `zwlr-layer-shell-v1`. Override for the auto-downgrade
+    /// heuristic, mainly useful for testing.
+    #[arg(long, conflicts_with = "windowed")]
+    pub layer_shell: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]

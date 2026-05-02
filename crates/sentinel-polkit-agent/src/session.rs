@@ -9,6 +9,8 @@ use crate::helper1;
 use anyhow::{Context, Result};
 use log::{info, warn};
 use sentinel_config::ServiceConfig;
+use sentinel_config::log_kv::quote as q;
+use std::time::Instant;
 
 pub struct AuthInputs<'a> {
     pub action_id: &'a str,
@@ -36,24 +38,52 @@ pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
         process_cwd: inputs.process_cwd,
         requesting_user: inputs.requesting_user,
     });
+    let dialog_started = Instant::now();
     let outcome = helper_ui::run(req).await.context("run sentinel-helper")?;
+    let latency_ms = dialog_started.elapsed().as_millis();
+
+    let process_name = inputs
+        .process_exe
+        .and_then(|p| std::path::Path::new(p).file_name())
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
 
     match outcome {
-        Outcome::Deny | Outcome::Timeout => {
+        Outcome::Deny => {
             info!(
-                "user denied (outcome={outcome:?}) for action {}",
-                inputs.action_id
+                "event=auth.deny source=agent user={} action={} process={} latency_ms={}",
+                q(inputs.username),
+                q(inputs.action_id),
+                q(process_name),
+                latency_ms
             );
             return Ok(false);
         }
-        Outcome::Allow => {}
+        Outcome::Timeout => {
+            info!(
+                "event=auth.timeout source=agent user={} action={} process={} latency_ms={}",
+                q(inputs.username),
+                q(inputs.action_id),
+                q(process_name),
+                latency_ms
+            );
+            return Ok(false);
+        }
+        Outcome::Allow => {
+            info!(
+                "event=auth.allow source=agent user={} action={} process={} latency_ms={}",
+                q(inputs.username),
+                q(inputs.action_id),
+                q(process_name),
+                latency_ms
+            );
+        }
     }
 
     // Pre-approve before handing off to helper-1. helper-1 → PAM →
     // pam_sentinel.so will dequeue this from our socket within a few
     // milliseconds.
     queue.push(inputs.action_id.to_string()).await;
-    info!("queued approval for action {}", inputs.action_id);
 
     let success = helper1::run(helper1::Run {
         username: inputs.username,
@@ -64,9 +94,8 @@ pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
 
     if !success {
         warn!(
-            "polkit-agent-helper-1 reported FAILURE for action {} \
-             (PAM stack didn't accept our approval?)",
-            inputs.action_id
+            "event=auth.error source=agent.helper1 action={} note=\"helper-1 reported FAILURE — PAM stack rejected approval?\"",
+            q(inputs.action_id)
         );
     }
     Ok(success)

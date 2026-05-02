@@ -54,6 +54,11 @@ pub struct ConfirmApp {
     finished: bool,
     show_details: bool,
     surface_id: Option<window::Id>,
+    /// Resolved icon for the requesting executable, if the icon theme
+    /// has a match for the basename. `None` means "no theme match —
+    /// don't render an icon" rather than rendering a generic
+    /// placeholder, which would just clutter the dialog.
+    process_icon: Option<cosmic::widget::icon::Named>,
 }
 
 impl Application for ConfirmApp {
@@ -74,6 +79,7 @@ impl Application for ConfirmApp {
     fn init(core: cosmic::app::Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let allow_first = flags.randomize && rand::random_bool(0.5);
         let windowed = flags.windowed;
+        let process_icon = resolve_process_icon(flags.process_exe.as_deref());
         let mut app = Self {
             core,
             args: flags,
@@ -84,6 +90,7 @@ impl Application for ConfirmApp {
             finished: false,
             show_details: false,
             surface_id: None,
+            process_icon,
         };
 
         let task = if windowed {
@@ -208,10 +215,23 @@ impl ConfirmApp {
         }
 
         if let Some(exe) = self.args.process_exe.as_deref() {
+            // Top of the card is the exe identification: optional icon
+            // on the left (UAC-style — gives users a visual anchor for
+            // what app they're authenticating), exe path on the right.
+            let exe_text = text::monotext(truncate_for_display(exe, 280)).width(Length::Fill);
+            let exe_row: Element<'_, Message> = match self.process_icon.clone() {
+                Some(icon) => row::with_capacity(2)
+                    .spacing(spacing.space_s)
+                    .align_y(Vertical::Center)
+                    .push(icon)
+                    .push(exe_text)
+                    .into(),
+                None => exe_text.into(),
+            };
             let mut info = column::with_capacity(8)
                 .spacing(spacing.space_xxs)
                 .width(Length::Fill)
-                .push(text::monotext(truncate_for_display(exe, 280)).width(Length::Fill));
+                .push(exe_row);
 
             // Whether we have any expandable detail at all.
             let has_details = self.args.process_cmdline.is_some()
@@ -416,6 +436,33 @@ fn detail_row<'a>(label: &str, value: &str) -> Element<'a, Message> {
         .push(text::caption(format!("{label}:")))
         .push(text::monotext(truncate_for_display(value, 4096)).width(Length::Fill))
         .into()
+}
+
+/// Try to resolve an icon theme entry for the requesting executable's
+/// basename (e.g. `/usr/bin/firefox` → `firefox`). Returns `None` when
+/// the theme has no match — caller renders no icon in that case rather
+/// than a generic placeholder.
+///
+/// The lookup is freedesktop-icons-spec via libcosmic's icon theme
+/// machinery, which uses a file-based cache. Done once at app init so
+/// repeated dialog renders don't walk the theme directory.
+fn resolve_process_icon(process_exe: Option<&str>) -> Option<cosmic::widget::icon::Named> {
+    let basename = process_exe
+        .and_then(|p| std::path::Path::new(p).file_name())
+        .and_then(|s| s.to_str())?;
+    let named = cosmic::widget::icon::from_name(basename.to_string())
+        .size(48)
+        // Disable Named's default name-truncation fallback (which would
+        // try `firefox-nightly` → `firefox-` → `firefox`). For our use
+        // case "no exact match" should mean "no icon" — a misleading
+        // partial match (e.g. `python3-foo` falling back to `python3`)
+        // is worse than no icon at all.
+        .fallback(None);
+    if named.clone().path().is_some() {
+        Some(named)
+    } else {
+        None
+    }
 }
 
 /// Hard cap on rendered text length. Anything past `max_chars` is replaced
