@@ -32,7 +32,7 @@
 
         sentinel = pkgs.rustPlatform.buildRustPackage {
           pname = "sentinel";
-          version = "0.4.1";
+          version = "0.5.0";
           src = ./.;
 
           cargoLock = {
