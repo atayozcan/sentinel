@@ -74,8 +74,7 @@ impl Request {
         // tokens that look like a bug.
         let process_name = args
             .process_exe
-            .and_then(|p| std::path::Path::new(p).file_name())
-            .and_then(|s| s.to_str())
+            .and_then(sentinel_config::process_basename)
             .unwrap_or("unknown");
 
         const SERVICE: &str = "polkit-1";

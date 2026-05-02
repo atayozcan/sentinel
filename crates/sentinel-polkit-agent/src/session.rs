@@ -44,8 +44,7 @@ pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
 
     let process_name = inputs
         .process_exe
-        .and_then(|p| std::path::Path::new(p).file_name())
-        .and_then(|s| s.to_str())
+        .and_then(sentinel_config::process_basename)
         .unwrap_or("unknown");
 
     match outcome {

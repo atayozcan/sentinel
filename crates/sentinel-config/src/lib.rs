@@ -334,6 +334,17 @@ pub const DEFAULT_TITLE: &str = "Authentication Required";
 pub const DEFAULT_MESSAGE: &str = "The application \"%p\" is requesting elevated privileges.";
 pub const DEFAULT_SECONDARY: &str = "Click \"Allow\" to continue or \"Deny\" to cancel.";
 
+/// Basename of an executable path, suitable for `%p` substitution
+/// in dialog messages and for icon-theme lookup. Returns `None` for
+/// paths with no file component or non-UTF-8 names. Does not borrow
+/// the input as a Path (to keep the lifetime story trivial for
+/// caller chains like `Option::and_then`).
+pub fn process_basename(exe: &str) -> Option<&str> {
+    std::path::Path::new(exe)
+        .file_name()
+        .and_then(|s| s.to_str())
+}
+
 /// Best-effort `/proc/<pid>/*` readers shared by the PAM module and
 /// the polkit agent. Each function returns `None` on any error
 /// (missing pid, permission denied, decode failure) — these are
@@ -715,5 +726,25 @@ mod tests {
         assert!(Outcome::Allow.is_allow());
         assert!(!Outcome::Deny.is_allow());
         assert!(!Outcome::Timeout.is_allow());
+    }
+
+    // ---- process_basename -------------------------------------------------
+
+    #[test]
+    fn process_basename_strips_dirname() {
+        assert_eq!(process_basename("/usr/bin/firefox"), Some("firefox"));
+        assert_eq!(process_basename("/bin/true"), Some("true"));
+    }
+
+    #[test]
+    fn process_basename_handles_no_directory() {
+        assert_eq!(process_basename("bash"), Some("bash"));
+    }
+
+    #[test]
+    fn process_basename_returns_none_for_path_only_dots() {
+        // `Path::file_name()` returns None for "/", "..", "."
+        assert_eq!(process_basename("/"), None);
+        assert_eq!(process_basename(""), None);
     }
 }

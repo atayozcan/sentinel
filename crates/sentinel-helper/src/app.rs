@@ -420,8 +420,7 @@ impl ConfirmApp {
         self.args
             .process_exe
             .as_deref()
-            .and_then(|p| std::path::Path::new(p).file_name())
-            .and_then(|s| s.to_str())
+            .and_then(sentinel_config::process_basename)
             .unwrap_or("unknown")
             .to_string()
     }
@@ -447,9 +446,7 @@ fn detail_row<'a>(label: &str, value: &str) -> Element<'a, Message> {
 /// machinery, which uses a file-based cache. Done once at app init so
 /// repeated dialog renders don't walk the theme directory.
 fn resolve_process_icon(process_exe: Option<&str>) -> Option<cosmic::widget::icon::Named> {
-    let basename = process_exe
-        .and_then(|p| std::path::Path::new(p).file_name())
-        .and_then(|s| s.to_str())?;
+    let basename = process_exe.and_then(sentinel_config::process_basename)?;
     let named = cosmic::widget::icon::from_name(basename.to_string())
         .size(48)
         // Disable Named's default name-truncation fallback (which would
