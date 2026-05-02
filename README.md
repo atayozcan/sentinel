@@ -69,14 +69,22 @@ next module (typically `pam_unix`, the password prompt).
 
 ## Compatibility
 
-| Compositor    | Status        |
-| ------------- | ------------- |
-| cosmic-comp   | tested        |
-| Hyprland      | should work   |
-| Sway          | should work   |
-| KWin/Wayland  | should work   |
-| GNOME/Mutter  | **no** (no `zwlr-layer-shell-v1`) — use `--windowed` |
-| X11 only      | not supported |
+| Compositor    | Status        | Notes |
+| ------------- | ------------- | ----- |
+| cosmic-comp   | tested        | primary target |
+| KWin/Wayland  | expected to work | Plasma 6.x ships `zwlr-layer-shell-v1`; Sentinel registers ahead of polkit-kde |
+| Hyprland      | expected to work | sample animation/blur rules at `packaging/hyprland/sentinel.conf` |
+| Sway          | expected to work | reference wlroots compositor |
+| Niri          | expected to work | layer-shell overlay anchors fullscreen as on other wlroots-style compositors |
+| Wayfire       | expected to work | wlroots-based |
+| River         | expected to work | wlroots-based |
+| GNOME/Mutter  | auto-fallback | Mutter has no `zwlr-layer-shell-v1`. Helper detects via `XDG_CURRENT_DESKTOP` and falls back to `xdg-toplevel` (regular window) automatically; force with `--windowed`. |
+| Pantheon / Budgie / Unity | auto-fallback | Same as GNOME — Mutter-based. |
+| X11 only      | not supported | Wayland-only |
+
+If you've used Sentinel on a compositor in the "expected to work"
+list and want it promoted to "tested", open a PR updating this
+table — bonus points for a screenshot.
 
 ## Project layout
 
