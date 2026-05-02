@@ -36,22 +36,43 @@ pub struct Request {
     pub min_time: u64,
     pub randomize: bool,
     pub process_exe: Option<String>,
+    pub process_cmdline: Option<String>,
+    pub process_pid: Option<i32>,
+    pub process_cwd: Option<String>,
+    pub requesting_user: Option<String>,
+    pub action: Option<String>,
+}
+
+pub struct ForAction<'a> {
+    pub action_id: &'a str,
+    pub message: &'a str,
+    pub process_exe: Option<&'a str>,
+    pub process_cmdline: Option<&'a str>,
+    pub process_pid: Option<i32>,
+    pub process_cwd: Option<&'a str>,
+    pub requesting_user: Option<&'a str>,
 }
 
 impl Request {
-    pub fn for_action(action_id: &str, message: &str) -> Self {
+    pub fn for_action(args: ForAction<'_>) -> Self {
+        let body = if args.message.is_empty() {
+            format!("An application is requesting authorisation for {}.", args.action_id)
+        } else {
+            args.message.to_string()
+        };
         Self {
             title: "Authentication Required".to_string(),
-            message: if message.is_empty() {
-                format!("An application is requesting authorisation for {action_id}.")
-            } else {
-                message.to_string()
-            },
-            secondary: "Click Allow to continue or Deny to cancel.".to_string(),
+            message: body,
+            secondary: "Click \"Allow\" to continue or \"Deny\" to cancel.".to_string(),
             timeout: 30,
             min_time: 500,
             randomize: true,
-            process_exe: None,
+            process_exe: args.process_exe.map(str::to_string),
+            process_cmdline: args.process_cmdline.map(str::to_string),
+            process_pid: args.process_pid,
+            process_cwd: args.process_cwd.map(str::to_string),
+            requesting_user: args.requesting_user.map(str::to_string),
+            action: Some(args.action_id.to_string()),
         }
     }
 }
@@ -69,6 +90,21 @@ pub async fn run(req: Request) -> Result<Outcome, HelperError> {
     }
     if let Some(exe) = &req.process_exe {
         cmd.arg("--process-exe").arg(exe);
+    }
+    if let Some(cmdline) = &req.process_cmdline {
+        cmd.arg("--process-cmdline").arg(cmdline);
+    }
+    if let Some(pid) = req.process_pid {
+        cmd.arg("--process-pid").arg(pid.to_string());
+    }
+    if let Some(cwd) = &req.process_cwd {
+        cmd.arg("--process-cwd").arg(cwd);
+    }
+    if let Some(user) = &req.requesting_user {
+        cmd.arg("--requesting-user").arg(user);
+    }
+    if let Some(action) = &req.action {
+        cmd.arg("--action").arg(action);
     }
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())

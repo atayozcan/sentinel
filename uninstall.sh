@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Sentinel uninstaller.
-# Reads /var/lib/sentinel/install.state to restore the system to its exact
-# pre-install state. Idempotent: safe to re-run, safe to run after a partial
-# install.
+#
+# Reads /var/lib/sentinel/install.state and walks each `CREATED` /
+# `REPLACED` entry in reverse to restore the system to its exact
+# pre-install state. Idempotent: safe to re-run, safe after a partial
+# install. Falls back to best-effort path-based cleanup if the state
+# file is missing.
 
 set -euo pipefail
 
@@ -21,25 +24,6 @@ LIBEXECDIR=${LIBEXECDIR:-lib}
 STATE_DIR="/var/lib/sentinel"
 STATE_FILE="$STATE_DIR/install.state"
 
-# Default fallback paths (used only when state file is missing — best-effort
-# removal so a half-broken install can still be cleaned up).
-FALLBACK_PATHS=(
-    "$PREFIX/lib/security/pam_sentinel.so"
-    "$PREFIX/$LIBEXECDIR/sentinel-helper"
-    "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
-    "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"
-    "$SYSCONFDIR/security/sentinel.conf"
-    "$SYSCONFDIR/pam.d/polkit-1"
-)
-
-# Identify the invoking user so we can run `systemctl --user` for them.
-BUILD_USER=""
-if [[ -n "${PKEXEC_UID:-}" ]]; then
-    BUILD_USER="$(getent passwd "$PKEXEC_UID" | cut -d: -f1 || true)"
-elif [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
-    BUILD_USER="$SUDO_USER"
-fi
-
 ASSUME_YES=0
 for arg in "$@"; do
     [[ "$arg" == "-y" || "$arg" == "--yes" ]] && ASSUME_YES=1
@@ -57,24 +41,6 @@ fi
 if [[ -f "$STATE_FILE" ]]; then
     step "Restoring pre-install state from $STATE_FILE…"
     failures=0
-
-    # First pass (forward order): handle ENABLED entries — disable systemd
-    # --user units before removing their unit files in the reverse pass.
-    while IFS=$'\t' read -r action target _; do
-        [[ "${action:-}" == "ENABLED" ]] || continue
-        unit="${target#systemd:user:}"
-        if [[ -n "$BUILD_USER" ]]; then
-            if runuser -u "$BUILD_USER" -- systemctl --user disable --now "$unit" 2>/dev/null; then
-                info "Disabled $unit (--user, as $BUILD_USER)"
-            else
-                warn "Could not disable $unit; carrying on"
-            fi
-        else
-            warn "No invoking user detected; skipping systemctl --user disable for $unit"
-        fi
-    done < "$STATE_FILE"
-
-    # Second pass (reverse order): undo CREATED / REPLACED.
     while IFS=$'\t' read -r action path backup; do
         [[ -z "${action:-}" ]] && continue
         case "$action" in
@@ -92,8 +58,8 @@ if [[ -f "$STATE_FILE" ]]; then
                     warn "Backup missing for $path; leaving current file in place"
                 fi
                 ;;
-            ENABLED|VERSION)
-                # Already handled above (ENABLED) or informational (VERSION).
+            VERSION)
+                # Informational; nothing to undo.
                 ;;
             *)
                 warn "Unknown state entry: $action $path"
@@ -101,6 +67,7 @@ if [[ -f "$STATE_FILE" ]]; then
         esac
     done < <(tac "$STATE_FILE")
 
+    systemctl daemon-reload 2>/dev/null || true
     rm -f -- "$STATE_FILE"
     rmdir --ignore-fail-on-non-empty "$STATE_DIR" 2>/dev/null || true
 
@@ -117,9 +84,18 @@ fi
 warn "No install state file at $STATE_FILE."
 warn "Falling back to best-effort removal of known paths."
 
+FALLBACK_PATHS=(
+    "$PREFIX/lib/security/pam_sentinel.so"
+    "$PREFIX/$LIBEXECDIR/sentinel-helper"
+    "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
+    "$SYSCONFDIR/security/sentinel.conf"
+    "$SYSCONFDIR/pam.d/polkit-1"
+    "$SYSCONFDIR/xdg/autostart/sentinel-polkit-agent.desktop"
+    "$SYSCONFDIR/systemd/system/polkit-agent-helper@.service.d/sentinel.conf"
+)
+
 for p in "${FALLBACK_PATHS[@]}"; do
     if [[ -e "$p" ]]; then
-        # If a pre-sentinel backup exists, prefer restoring it.
         if [[ -f "${p}.pre-sentinel.bak" ]]; then
             mv -f -- "${p}.pre-sentinel.bak" "$p" && info "Restored $p from backup"
         else
@@ -128,10 +104,11 @@ for p in "${FALLBACK_PATHS[@]}"; do
     fi
 done
 
-# Sudo file was optional; restore its backup only if one exists.
+# Sudo wiring was optional; restore the backup only if one exists.
 if [[ -f "$SYSCONFDIR/pam.d/sudo.pre-sentinel.bak" ]]; then
     mv -f -- "$SYSCONFDIR/pam.d/sudo.pre-sentinel.bak" "$SYSCONFDIR/pam.d/sudo" \
         && info "Restored $SYSCONFDIR/pam.d/sudo from backup"
 fi
 
+systemctl daemon-reload 2>/dev/null || true
 info "Sentinel uninstalled (fallback mode)."

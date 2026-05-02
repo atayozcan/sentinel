@@ -1,0 +1,120 @@
+.TH pam_sentinel 8 "" "Sentinel" "PAM modules"
+
+.SH NAME
+pam_sentinel \- PAM module that gates authentication on a graphical confirmation
+
+.SH SYNOPSIS
+.B auth sufficient pam_sentinel.so
+
+.SH DESCRIPTION
+.B pam_sentinel
+is the PAM module half of Sentinel. Loaded by libpam in any PAM stack
+that references it (typically
+.IR /etc/pam.d/polkit-1
+and optionally
+.IR /etc/pam.d/sudo ),
+it gates authentication on a graphical confirm/deny dialog rendered by
+.BR sentinel-helper (1).
+
+For each authentication attempt the module performs one of four
+actions:
+
+.IP \(bu 4
+.B Bypass:
+if Sentinel's polkit agent has pre-approved this auth (see
+.BR sentinel-polkit-agent (1)),
+the module reads "OK" from the agent's local socket and returns
+.B PAM_SUCCESS
+without spawning a dialog. This is the path for `pkexec`-style auth.
+
+.IP \(bu 4
+.B Dialog:
+otherwise, the module forks
+.B sentinel-helper
+to render the layer-shell confirmation overlay. Allow returns
+.BR PAM_SUCCESS ;
+Deny / timeout returns
+.BR PAM_AUTH_ERR .
+
+.IP \(bu 4
+.B Headless:
+no Wayland display is available. The module's
+.B headless_action
+config option decides whether to allow, deny, or fall through (default:
+fall through to the next PAM module, which is usually a password prompt).
+
+.IP \(bu 4
+.B Disabled:
+.B enabled = false
+in
+.IR /etc/security/sentinel.conf .
+Returns
+.B PAM_IGNORE
+immediately.
+
+.SH RECOMMENDED PAM CONTROL
+
+.B sufficient
+is the recommended control:
+
+.RS
+.EX
+auth       sufficient pam_sentinel.so
+auth       include    system-auth
+.EE
+.RE
+
+If Sentinel returns
+.BR PAM_SUCCESS ,
+the rest of the stack is skipped (no password). For any other return
+code the stack continues, so a Sentinel failure (helper crash, headless
+fallback) doesn't lock the user out.
+
+.SH FILES
+.TP
+.I /usr/lib/security/pam_sentinel.so
+The module library. Mode 0755 (the execute bit is required by libpam
+under sandboxed PAM stacks like systemd-socket-activated
+.BR polkit-agent-helper-1 ).
+.TP
+.I /etc/security/sentinel.conf
+Configuration file. See
+.BR sentinel.conf (5).
+.TP
+.I $XDG_RUNTIME_DIR/sentinel-agent.sock
+Bypass socket the module connects to when present. Owned by the
+requesting user, mode 0600.
+
+.SH ENVIRONMENT
+.TP
+.B WAYLAND_DISPLAY
+Read by
+.BR sentinel-helper (1)
+to locate the user's Wayland session. The PAM module sets this if it
+finds the user's runtime socket.
+
+.SH LOGGING
+The module logs to syslog facility
+.B AUTH
+under the identifier
+.BR pam_sentinel .
+Inspect with:
+
+.RS
+.EX
+journalctl -t pam_sentinel
+.EE
+.RE
+
+.SH SEE ALSO
+.BR sentinel.conf (5),
+.BR sentinel-helper (1),
+.BR sentinel-polkit-agent (1),
+.BR pam.conf (5),
+.BR polkit-agent-helper-1 (1)
+
+.SH AUTHOR
+Atay Özcan <atay@oezcan.me>
+
+.SH HOMEPAGE
+https://github.com/atayozcan/sentinel

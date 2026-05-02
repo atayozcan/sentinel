@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Build a release tarball + a prebuilt-binary tarball into ./dist/.
-# Usage: ./scripts/build-release.sh [version]
-# If version is omitted, reads it from Cargo.toml workspace.package.version.
+# Build release tarballs + generate shell completions and man pages
+# into ./dist/. Usage: ./scripts/build-release.sh [version]
 
 set -euo pipefail
 
@@ -27,35 +26,70 @@ echo "==> Building release ($VERSION, $ARCH)…"
 SENTINEL_PREFIX=/usr SENTINEL_SYSCONFDIR=/etc SENTINEL_LIBEXECDIR=lib \
     cargo build --release --workspace --locked
 
+# ---------------------------------------------------------------------------
+# Generate completions + man pages from the freshly-built binaries. Lives
+# under target/release/share/ so cargo-deb / cargo-generate-rpm / install.sh
+# can reference them as plain assets.
+# ---------------------------------------------------------------------------
+echo "==> Generating completions + man pages → target/release/share/"
+SHARE=target/release/share
+mkdir -p "$SHARE"
+for bin in sentinel-helper sentinel-polkit-agent; do
+    target/release/$bin completions bash > "$SHARE/$bin.bash"
+    target/release/$bin completions fish > "$SHARE/$bin.fish"
+    target/release/$bin completions zsh  > "$SHARE/_$bin"
+    target/release/$bin man              > "$SHARE/$bin.1"
+done
+
+# ---------------------------------------------------------------------------
+# Source tarball.
+# ---------------------------------------------------------------------------
 echo "==> Source tarball → $SRC_TAR"
 git archive --format=tar.gz \
     --prefix="sentinel-$VERSION/" \
     -o "$SRC_TAR" \
     HEAD
 
+# ---------------------------------------------------------------------------
+# Binary tarball mirroring the install layout.
+# ---------------------------------------------------------------------------
 echo "==> Binary tarball → $BIN_TAR"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
+ROOT="$STAGE/sentinel-$VERSION"
 
-mkdir -p \
-    "$STAGE/sentinel-$VERSION/usr/lib/security" \
-    "$STAGE/sentinel-$VERSION/usr/lib" \
-    "$STAGE/sentinel-$VERSION/etc/security" \
-    "$STAGE/sentinel-$VERSION/etc/pam.d" \
-    "$STAGE/sentinel-$VERSION/usr/share/doc/sentinel" \
-    "$STAGE/sentinel-$VERSION/usr/share/licenses/sentinel"
+install -Dm755 target/release/sentinel-helper                       "$ROOT/usr/lib/sentinel-helper"
+install -Dm755 target/release/sentinel-polkit-agent                 "$ROOT/usr/lib/sentinel-polkit-agent"
+install -Dm755 target/release/libpam_sentinel.so                    "$ROOT/usr/lib/security/pam_sentinel.so"
+install -Dm644 config/sentinel.conf                                 "$ROOT/etc/security/sentinel.conf"
+install -Dm644 config/polkit-1                                      "$ROOT/etc/pam.d/polkit-1"
+install -Dm644 config/sudo                                          "$ROOT/usr/share/doc/sentinel/sudo"
+install -Dm644 packaging/xdg-autostart/sentinel-polkit-agent.desktop \
+    "$ROOT/etc/xdg/autostart/sentinel-polkit-agent.desktop"
+install -Dm644 packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf \
+    "$ROOT/etc/systemd/system/polkit-agent-helper@.service.d/sentinel.conf"
+install -Dm644 README.md                                            "$ROOT/usr/share/doc/sentinel/README.md"
+install -Dm644 LICENSE                                              "$ROOT/usr/share/licenses/sentinel/LICENSE"
+install -Dm755 install.sh                                           "$ROOT/install.sh"
+install -Dm755 uninstall.sh                                         "$ROOT/uninstall.sh"
 
-install -Dm755 target/release/sentinel-helper      "$STAGE/sentinel-$VERSION/usr/lib/sentinel-helper"
-install -Dm644 target/release/libpam_sentinel.so   "$STAGE/sentinel-$VERSION/usr/lib/security/pam_sentinel.so"
-install -Dm644 config/sentinel.conf                "$STAGE/sentinel-$VERSION/etc/security/sentinel.conf"
-install -Dm644 config/polkit-1                     "$STAGE/sentinel-$VERSION/etc/pam.d/polkit-1"
-install -Dm644 README.md                           "$STAGE/sentinel-$VERSION/usr/share/doc/sentinel/README.md"
-install -Dm644 LICENSE                             "$STAGE/sentinel-$VERSION/usr/share/licenses/sentinel/LICENSE"
-install -Dm755 install.sh                          "$STAGE/sentinel-$VERSION/install.sh"
-install -Dm755 uninstall.sh                        "$STAGE/sentinel-$VERSION/uninstall.sh"
+# Completions + man pages.
+install -Dm644 "$SHARE/sentinel-helper.bash"        "$ROOT/usr/share/bash-completion/completions/sentinel-helper"
+install -Dm644 "$SHARE/sentinel-polkit-agent.bash"  "$ROOT/usr/share/bash-completion/completions/sentinel-polkit-agent"
+install -Dm644 "$SHARE/sentinel-helper.fish"        "$ROOT/usr/share/fish/vendor_completions.d/sentinel-helper.fish"
+install -Dm644 "$SHARE/sentinel-polkit-agent.fish"  "$ROOT/usr/share/fish/vendor_completions.d/sentinel-polkit-agent.fish"
+install -Dm644 "$SHARE/_sentinel-helper"            "$ROOT/usr/share/zsh/site-functions/_sentinel-helper"
+install -Dm644 "$SHARE/_sentinel-polkit-agent"      "$ROOT/usr/share/zsh/site-functions/_sentinel-polkit-agent"
+install -Dm644 "$SHARE/sentinel-helper.1"           "$ROOT/usr/share/man/man1/sentinel-helper.1"
+install -Dm644 "$SHARE/sentinel-polkit-agent.1"     "$ROOT/usr/share/man/man1/sentinel-polkit-agent.1"
+install -Dm644 packaging/man/sentinel.conf.5        "$ROOT/usr/share/man/man5/sentinel.conf.5"
+install -Dm644 packaging/man/pam_sentinel.8         "$ROOT/usr/share/man/man8/pam_sentinel.8"
 
 tar -C "$STAGE" -czf "$BIN_TAR" "sentinel-$VERSION"
 
+# ---------------------------------------------------------------------------
+# Checksums.
+# ---------------------------------------------------------------------------
 echo "==> Checksums"
 ( cd "$DIST" && sha256sum "$(basename "$SRC_TAR")" "$(basename "$BIN_TAR")" > "sentinel-$VERSION.sha256" )
 

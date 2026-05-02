@@ -32,7 +32,7 @@
 
         sentinel = pkgs.rustPlatform.buildRustPackage {
           pname = "sentinel";
-          version = "0.2.0";
+          version = "0.4.0";
           src = ./.;
 
           cargoLock = {
@@ -48,7 +48,7 @@
           SENTINEL_LIBEXECDIR = "lib";
 
           postInstall = ''
-            install -Dm644 target/release/libpam_sentinel.so \
+            install -Dm755 target/release/libpam_sentinel.so \
               $out/lib/security/pam_sentinel.so
             install -Dm755 target/release/sentinel-helper \
               $out/lib/sentinel-helper
@@ -58,10 +58,23 @@
               $out/etc/security/sentinel.conf
             install -Dm644 config/polkit-1 \
               $out/etc/pam.d/polkit-1
-            install -Dm644 packaging/systemd/sentinel-polkit-agent.service \
-              $out/lib/systemd/user/sentinel-polkit-agent.service
+            install -Dm644 packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf \
+              $out/etc/systemd/system/polkit-agent-helper@.service.d/sentinel.conf
             install -Dm644 packaging/xdg-autostart/sentinel-polkit-agent.desktop \
               $out/etc/xdg/autostart/sentinel-polkit-agent.desktop
+
+            # Generate completions + man pages.
+            for bin in sentinel-helper sentinel-polkit-agent; do
+              $out/lib/$bin completions bash > $out/share/bash-completion/completions/$bin
+              $out/lib/$bin completions fish > $out/share/fish/vendor_completions.d/$bin.fish
+              $out/lib/$bin completions zsh  > $out/share/zsh/site-functions/_$bin
+              $out/lib/$bin man              > $out/share/man/man1/$bin.1
+            done
+            install -Dm644 packaging/man/sentinel.conf.5 \
+              $out/share/man/man5/sentinel.conf.5
+            install -Dm644 packaging/man/pam_sentinel.8 \
+              $out/share/man/man8/pam_sentinel.8
+
             install -Dm644 LICENSE \
               $out/share/licenses/sentinel/LICENSE
             install -Dm644 README.md \

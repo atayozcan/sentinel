@@ -3,15 +3,21 @@ mod cli;
 mod result;
 
 use app::{ConfirmApp, loaded_outcome};
-use clap::Parser;
-use cli::Args;
+use clap::{CommandFactory, Parser};
+use cli::{Args, GenSubcommand};
 use std::sync::Arc;
 
+const BIN: &str = "sentinel-helper";
+
 fn main() -> anyhow::Result<()> {
-    let args = Arc::new(Args::parse());
+    let args = Args::parse();
+
+    if let Some(g) = &args.generate {
+        return run_gen(g);
+    }
 
     if std::env::var_os("WAYLAND_DISPLAY").is_none() {
-        eprintln!("sentinel-helper: WAYLAND_DISPLAY not set; this helper is Wayland-only");
+        eprintln!("{BIN}: WAYLAND_DISPLAY not set; this helper is Wayland-only");
         println!("DENY");
         std::process::exit(1);
     }
@@ -28,10 +34,23 @@ fn main() -> anyhow::Result<()> {
             .resizable(None);
     }
 
-    cosmic::app::run::<ConfirmApp>(settings, args.clone())
+    cosmic::app::run::<ConfirmApp>(settings, Arc::new(args))
         .map_err(|e| anyhow::anyhow!("cosmic app error: {e}"))?;
 
     let outcome = loaded_outcome();
     println!("{outcome}");
     std::process::exit(outcome.exit_code());
+}
+
+fn run_gen(g: &GenSubcommand) -> anyhow::Result<()> {
+    let mut cmd = Args::command();
+    match g {
+        GenSubcommand::Completions { shell } => {
+            clap_complete::generate(*shell, &mut cmd, BIN, &mut std::io::stdout());
+        }
+        GenSubcommand::Man => {
+            clap_mangen::Man::new(cmd).render(&mut std::io::stdout())?;
+        }
+    }
+    Ok(())
 }

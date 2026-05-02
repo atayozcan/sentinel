@@ -1,10 +1,26 @@
+//! `pam_sentinel.so` — the PAM module half of Sentinel.
+//!
+//! Loaded by libpam on every authentication attempt for whatever
+//! services have it wired in (`/etc/pam.d/polkit-1`, `/etc/pam.d/sudo`,
+//! …). For each call we either:
+//!
+//! * **bypass**: the Sentinel polkit agent already pre-approved this
+//!   auth (we connect to its Unix socket and read "OK"). Return
+//!   `PAM_SUCCESS` immediately. See [`agent_bypass`].
+//! * **dialog**: spawn `sentinel-helper` to render the confirmation UI;
+//!   return `PAM_SUCCESS` on Allow, `PAM_AUTH_ERR` on Deny / timeout.
+//! * **headless**: no Wayland display; return whatever
+//!   `headless_action` says (default `PAM_IGNORE` so the next module
+//!   can prompt for a password).
+//! * **disabled**: `enabled = false` in config; `PAM_IGNORE`.
+
 mod agent_bypass;
 mod config;
 mod display;
 mod helper;
 mod proc_info;
 
-use config::{HeadlessAction, format_message, load};
+use config::{HeadlessAction, ServiceConfig, format_message, load};
 use helper::{HelperRequest, HelperResult, run as run_helper};
 use pam::constants::{PamFlag, PamResultCode};
 use pam::module::{PamHandle, PamHooks};
@@ -25,111 +41,35 @@ impl PamHooks for PamSentinel {
     ) -> PamResultCode {
         init_logger();
 
-        // Recursion-prevention: when invoked from polkit-agent-helper-1
-        // under the Sentinel polkit agent, ask the agent's local socket
-        // whether this auth was already approved. If so return
-        // PAM_SUCCESS without spawning the dialog.
         if let Some(rc) = agent_bypass::check_agent_bypass(pamh) {
             return rc;
         }
 
-        let service = pamh
-            .get_item::<pam::items::Service>()
-            .ok()
-            .flatten()
-            .and_then(|s| s.to_str().ok().map(str::to_owned))
-            .unwrap_or_else(|| "unknown".into());
-
+        let service = pam_service(pamh);
         let cfg = load(&service);
-
         if !cfg.enabled {
             log::debug!("{MODULE_NAME}: disabled for service {service}");
             return PamResultCode::PAM_IGNORE;
         }
 
-        // Identify the *requesting* user — the human who'll see the dialog.
-        // For pkexec/sudo, this is the calling user (uid != 0), not the
-        // target user being authenticated to (often root).
-        //
-        // PAM's get_user() can fail or return the target user depending on
-        // the service (polkit, in particular, doesn't always propagate
-        // PAM_USER), so we read /proc/<ppid>/loginuid which is set by
-        // login/PAM at session start and immune to setuid transitions.
-        let requesting_pid = unsafe { libc_getppid() };
-        let requesting_uid = caller_uid(requesting_pid);
-        let user = match nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(requesting_uid)) {
-            Ok(Some(u)) => u.name,
-            _ => pamh
-                .get_user(None)
-                .ok()
-                .unwrap_or_else(|| "unknown".into()),
-        };
+        // The PAM module is dlopen'd inside the privileged binary
+        // (`sudo`, `polkit-agent-helper-1`, `su`). `getpid()` therefore
+        // yields *that* process — which is what we want to display:
+        // `/proc/<sudo-pid>/cmdline` is the full command sudo is about
+        // to run, while `getppid()` would point at sudo's parent shell.
+        // For loginuid lookup we still walk via the parent because the
+        // loginuid is inherited from login, not set on the privileged
+        // binary itself.
+        let process_pid = unsafe { libc_getpid() };
+        let requesting_uid = caller_uid(unsafe { libc_getppid() });
+        let user = resolve_user(pamh, requesting_uid);
 
         if !display::detect_for_user(requesting_uid) {
-            return match cfg.headless_action {
-                HeadlessAction::Allow => {
-                    if cfg.log_attempts {
-                        log::warn!(
-                            "{MODULE_NAME}: no display, allowing (service {service}, user {user})"
-                        );
-                    }
-                    PamResultCode::PAM_SUCCESS
-                }
-                HeadlessAction::Deny => {
-                    if cfg.log_attempts {
-                        log::info!(
-                            "{MODULE_NAME}: no display, denying (service {service}, user {user})"
-                        );
-                    }
-                    PamResultCode::PAM_AUTH_ERR
-                }
-                HeadlessAction::Password => {
-                    log::debug!(
-                        "{MODULE_NAME}: no display, falling through to password (service {service})"
-                    );
-                    PamResultCode::PAM_IGNORE
-                }
-            };
+            return handle_headless(&cfg, &service, &user);
         }
 
-        let process = ProcessInfo::for_pid(requesting_pid);
-
-        let formatted_message = format_message(&cfg.message, &user, &service, &process.name);
-        let formatted_secondary = format_message(&cfg.secondary, &user, &service, &process.name);
-
-        let req = HelperRequest {
-            cfg: &cfg,
-            user: &user,
-            service: &service,
-            process: &process,
-            formatted_message: &formatted_message,
-            formatted_secondary: &formatted_secondary,
-            target_uid: requesting_uid,
-            requesting_pid,
-        };
-
-        let result = run_helper(&req);
-
-        if cfg.log_attempts {
-            match &result {
-                Ok(HelperResult::Allow) => log::info!(
-                    "{MODULE_NAME}: user {user}, service {service}, process {}: ALLOW",
-                    process.name
-                ),
-                Ok(HelperResult::Deny) => log::info!(
-                    "{MODULE_NAME}: user {user}, service {service}, process {}: DENY",
-                    process.name
-                ),
-                Err(e) => log::warn!(
-                    "{MODULE_NAME}: helper error for user {user}, service {service}: {e}"
-                ),
-            }
-        }
-
-        match result {
-            Ok(HelperResult::Allow) => PamResultCode::PAM_SUCCESS,
-            _ => PamResultCode::PAM_AUTH_ERR,
-        }
+        let process = ProcessInfo::for_pid(process_pid);
+        spawn_dialog(&cfg, &service, &user, &process, process_pid, requesting_uid)
     }
 
     fn sm_setcred(
@@ -140,6 +80,95 @@ impl PamHooks for PamSentinel {
         PamResultCode::PAM_SUCCESS
     }
 }
+
+// -------------- per-stage helpers ------------------------------------------
+
+fn pam_service(pamh: &PamHandle) -> String {
+    pamh.get_item::<pam::items::Service>()
+        .ok()
+        .flatten()
+        .and_then(|s| s.to_str().ok().map(str::to_owned))
+        .unwrap_or_else(|| "unknown".into())
+}
+
+/// Resolve the requesting user's name. Prefers the uid we derived from
+/// `/proc/<ppid>/loginuid`; falls back to whatever PAM has if that uid
+/// has no passwd entry.
+fn resolve_user(pamh: &PamHandle, uid: u32) -> String {
+    if let Ok(Some(u)) = nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(uid)) {
+        return u.name;
+    }
+    pamh.get_user(None).ok().unwrap_or_else(|| "unknown".into())
+}
+
+fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultCode {
+    match cfg.headless_action {
+        HeadlessAction::Allow => {
+            if cfg.log_attempts {
+                log::warn!("{MODULE_NAME}: no display, allowing (service {service}, user {user})");
+            }
+            PamResultCode::PAM_SUCCESS
+        }
+        HeadlessAction::Deny => {
+            if cfg.log_attempts {
+                log::info!("{MODULE_NAME}: no display, denying (service {service}, user {user})");
+            }
+            PamResultCode::PAM_AUTH_ERR
+        }
+        HeadlessAction::Password => {
+            log::debug!("{MODULE_NAME}: no display, falling through to password (service {service})");
+            PamResultCode::PAM_IGNORE
+        }
+    }
+}
+
+fn spawn_dialog(
+    cfg: &ServiceConfig,
+    service: &str,
+    user: &str,
+    process: &ProcessInfo,
+    requesting_pid: i32,
+    requesting_uid: u32,
+) -> PamResultCode {
+    let formatted_message = format_message(&cfg.message, user, service, &process.name);
+    let formatted_secondary = format_message(&cfg.secondary, user, service, &process.name);
+
+    let req = HelperRequest {
+        cfg,
+        user,
+        service,
+        process,
+        formatted_message: &formatted_message,
+        formatted_secondary: &formatted_secondary,
+        target_uid: requesting_uid,
+        requesting_pid,
+    };
+
+    let result = run_helper(&req);
+
+    if cfg.log_attempts {
+        match &result {
+            Ok(HelperResult::Allow) => log::info!(
+                "{MODULE_NAME}: user {user}, service {service}, process {}: ALLOW",
+                process.name
+            ),
+            Ok(HelperResult::Deny) => log::info!(
+                "{MODULE_NAME}: user {user}, service {service}, process {}: DENY",
+                process.name
+            ),
+            Err(e) => log::warn!(
+                "{MODULE_NAME}: helper error for user {user}, service {service}: {e}"
+            ),
+        }
+    }
+
+    match result {
+        Ok(HelperResult::Allow) => PamResultCode::PAM_SUCCESS,
+        _ => PamResultCode::PAM_AUTH_ERR,
+    }
+}
+
+// -------------- module init -----------------------------------------------
 
 fn init_logger() {
     use std::sync::Once;
@@ -158,11 +187,15 @@ fn init_logger() {
     });
 }
 
+// -------------- libc shims + caller-uid lookup ----------------------------
+
 unsafe extern "C" {
     #[link_name = "getuid"]
     fn libc_getuid_raw() -> u32;
     #[link_name = "getppid"]
     fn libc_getppid_raw() -> i32;
+    #[link_name = "getpid"]
+    fn libc_getpid_raw() -> i32;
 }
 
 pub(crate) unsafe fn libc_getuid() -> u32 {
@@ -173,16 +206,19 @@ pub(crate) unsafe fn libc_getppid() -> i32 {
     unsafe { libc_getppid_raw() }
 }
 
-/// Identify the calling (human) user, even when the immediate caller is a
-/// setuid binary like sudo or pkexec.
+pub(crate) unsafe fn libc_getpid() -> i32 {
+    unsafe { libc_getpid_raw() }
+}
+
+/// Identify the calling (human) user, even when the immediate PAM
+/// caller is a setuid binary or socket-activated systemd service.
 ///
-/// Strategy:
-/// 1. `/proc/<ppid>/loginuid` — set by login/PAM at session start, immune to
-///    setuid transitions, the canonical Linux audit answer to "who is this
-///    really?". Returns `(uint32_t)-1` (i.e. 0xFFFFFFFF) for processes not
-///    associated with a login session.
-/// 2. `/proc/<ppid>/status` — the `Uid:` line, real-uid (first field).
-///    Works even for non-login processes.
+/// Strategy, in order:
+/// 1. `/proc/<ppid>/loginuid` — set by login/PAM at session start,
+///    inherited through forks, immune to setuid transitions. Returns
+///    `(uint32_t)-1` for processes not in a login session.
+/// 2. `/proc/<ppid>/status` — `Uid:` line, real-uid (first field).
+///    Works for non-login processes (e.g. systemd services).
 /// 3. Fall back to our own real uid.
 pub(crate) fn caller_uid(ppid: i32) -> u32 {
     if ppid > 0

@@ -1,0 +1,157 @@
+.TH sentinel.conf 5 "" "Sentinel" "Configuration files"
+
+.SH NAME
+sentinel.conf \- configuration file for the Sentinel PAM module
+
+.SH SYNOPSIS
+.B /etc/security/sentinel.conf
+
+.SH DESCRIPTION
+.B sentinel.conf
+configures the behaviour of
+.BR pam_sentinel (8),
+the PAM module half of Sentinel. The file is read on every authentication
+attempt; changes take effect immediately, no daemon to reload.
+
+The format is TOML. Top-level tables:
+.BR [general] ,
+.BR [appearance] ,
+and per-service overrides under
+.BR [services. <name>] .
+
+.SH [general]
+.TP
+.B enabled = bool
+Master switch. When false, the module returns
+.B PAM_IGNORE
+immediately and the rest of the PAM stack runs unchanged. Default: true.
+.TP
+.B timeout = uint
+Auto-deny timeout in seconds. 0 disables the timeout. Default: 30.
+.TP
+.B randomize_buttons = bool
+Swap the Allow/Deny button positions randomly to deter scripted clickers.
+Default: true.
+.TP
+.B headless_action = "allow" | "deny" | "password"
+What to do when no Wayland display is available (SSH session, console
+login, headless server).
+.B "password"
+returns
+.B PAM_IGNORE
+so the next module (typically pam_unix) runs.
+.B "allow"
+returns
+.B PAM_SUCCESS
+silently — dangerous, only use if you're sure.
+.B "deny"
+returns
+.B PAM_AUTH_ERR.
+Default: "password".
+.TP
+.B show_process_info = bool
+Display the requesting process's exe path in the dialog. Default: true.
+.TP
+.B log_attempts = bool
+Log every allow/deny/timeout to syslog (auth.info). Default: true.
+.TP
+.B min_display_time_ms = uint
+Disable the Allow button for this many milliseconds after the dialog
+appears, blocking instant scripted clicks. Default: 500.
+
+.SH [appearance]
+.TP
+.B title = string
+Dialog title. Default: "Authentication Required". No substitutions.
+.TP
+.B message = string
+Primary dialog message. Substitutions allowed (see TOKENS below).
+.TP
+.B secondary = string
+Secondary text below the message. Substitutions allowed.
+
+.SH [services.<name>]
+Per-PAM-service overrides. Any key from
+.B [general]
+or
+.B [appearance]
+can be overridden here. The
+.I <name>
+matches the PAM service exactly:
+.BR sudo ,
+.BR polkit-1 ,
+.BR su ,
+etc.
+.PP
+Example: be more lenient with polkit but stricter with su.
+.PP
+.RS
+.EX
+[services.polkit-1]
+timeout = 60
+
+[services.su]
+enabled = false
+.EE
+.RE
+
+.SH TOKENS
+Inside
+.B message
+and
+.B secondary
+the following expand at runtime:
+.TP
+.B %u
+The user being authenticated.
+.TP
+.B %s
+The PAM service name (e.g. sudo, polkit-1).
+.TP
+.B %p
+The requesting process's executable path.
+.TP
+.B %%
+A literal `%`.
+
+.SH EXAMPLE
+
+.RS
+.EX
+[general]
+enabled = true
+timeout = 30
+randomize_buttons = true
+headless_action = "password"
+
+[appearance]
+title = "Authentication Required"
+message = 'The application "%p" is requesting elevated privileges.'
+secondary = "Click Allow to continue or Deny to cancel."
+
+[services.sudo]
+timeout = 30
+randomize_buttons = true
+.EE
+.RE
+
+.SH FILES
+.TP
+.I /etc/security/sentinel.conf
+The configuration file.
+.TP
+.I /var/lib/sentinel/install.state
+Installer's record of files it created or replaced. Used by uninstall(1)
+to restore the pre-install state.
+
+.SH SEE ALSO
+.BR pam_sentinel (8),
+.BR sentinel-helper (1),
+.BR sentinel-polkit-agent (1),
+.BR pam.conf (5)
+
+.SH AUTHOR
+Atay Özcan <atay@oezcan.me>
+
+.SH HOMEPAGE
+https://github.com/atayozcan/sentinel

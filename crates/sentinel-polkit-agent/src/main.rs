@@ -9,16 +9,22 @@ mod socket_server;
 mod subject;
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{CommandFactory, Parser, Subcommand};
 use log::{info, warn};
 use syslog::{BasicLogger, Facility, Formatter3164};
 use zbus::Connection;
 
+const BIN: &str = "sentinel-polkit-agent";
 const AGENT_OBJECT_PATH: &str = "/com/github/sentinel/PolkitAgent";
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Sentinel polkit authentication agent")]
 struct Args {
+    /// Internal helper subcommands (completions, man page generation).
+    /// Hidden — used by the installer and packaging.
+    #[command(subcommand)]
+    generate: Option<GenSubcommand>,
+
     /// Override the systemd login session id (defaults to $XDG_SESSION_ID
     /// or /proc/self/sessionid).
     #[arg(long)]
@@ -27,6 +33,18 @@ struct Args {
     /// Verbose logging.
     #[arg(long)]
     debug: bool,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+#[command(hide = true)]
+enum GenSubcommand {
+    /// Print a shell completion script to stdout.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Print a roff(1)-formatted man page to stdout.
+    Man,
 }
 
 fn init_logger(debug: bool) {
@@ -48,6 +66,11 @@ fn init_logger(debug: bool) {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    if let Some(g) = &args.generate {
+        return run_gen(g);
+    }
+
     init_logger(args.debug);
 
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -55,6 +78,19 @@ fn main() -> Result<()> {
         .build()
         .context("build tokio runtime")?;
     rt.block_on(run(args))
+}
+
+fn run_gen(g: &GenSubcommand) -> Result<()> {
+    let mut cmd = Args::command();
+    match g {
+        GenSubcommand::Completions { shell } => {
+            clap_complete::generate(*shell, &mut cmd, BIN, &mut std::io::stdout());
+        }
+        GenSubcommand::Man => {
+            clap_mangen::Man::new(cmd).render(&mut std::io::stdout())?;
+        }
+    }
+    Ok(())
 }
 
 async fn run(args: Args) -> Result<()> {

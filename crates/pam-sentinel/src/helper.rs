@@ -102,6 +102,20 @@ fn child_exec(req: &HelperRequest<'_>, write_fd: OwnedFd) -> ! {
     if req.cfg.show_process_info {
         push(&mut argv, "--process-exe");
         push(&mut argv, &req.process.exe);
+        if !req.process.cmdline.is_empty() {
+            push(&mut argv, "--process-cmdline");
+            push(&mut argv, &req.process.cmdline);
+        }
+        push(&mut argv, "--process-pid");
+        push(&mut argv, &req.requesting_pid.to_string());
+        if !req.process.cwd.is_empty() {
+            push(&mut argv, "--process-cwd");
+            push(&mut argv, &req.process.cwd);
+        }
+        push(&mut argv, "--requesting-user");
+        push(&mut argv, req.user);
+        push(&mut argv, "--action");
+        push(&mut argv, req.service);
     }
 
     let prog = match CString::new(HELPER_PATH) {

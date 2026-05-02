@@ -8,7 +8,7 @@ use cosmic::iced::platform_specific::shell::commands::layer_surface::{
 use cosmic::iced::time::{self, Duration, Instant};
 use cosmic::iced::{Background, Border, Color, Length, Shadow, Subscription, window};
 use cosmic::iced::advanced::layout::Limits;
-use cosmic::widget::{button, column, container, progress_bar, row, text};
+use cosmic::widget::{button, column, container, progress_bar, row, scrollable, text};
 use cosmic::{Action, Application, Element, Task, executor, theme};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -40,6 +40,7 @@ pub enum Message {
     Allow,
     Deny,
     Escape,
+    ToggleDetails,
 }
 
 pub struct ConfirmApp {
@@ -50,6 +51,7 @@ pub struct ConfirmApp {
     allow_first: bool,
     allow_enabled: bool,
     finished: bool,
+    show_details: bool,
     surface_id: Option<window::Id>,
 }
 
@@ -79,6 +81,7 @@ impl Application for ConfirmApp {
             allow_first,
             allow_enabled: false,
             finished: false,
+            show_details: false,
             surface_id: None,
         };
 
@@ -161,6 +164,10 @@ impl Application for ConfirmApp {
                 store_outcome(Outcome::Deny);
                 cosmic::iced::exit()
             }
+            Message::ToggleDetails => {
+                self.show_details = !self.show_details;
+                Task::none()
+            }
         }
     }
 
@@ -178,19 +185,60 @@ impl ConfirmApp {
     fn dialog_view(&self) -> Element<'_, Message> {
         let spacing = theme::active().cosmic().spacing;
 
-        let mut content = column::with_capacity(8)
+        let mut content = column::with_capacity(10)
             .spacing(spacing.space_s)
             .align_x(Horizontal::Center)
-            .push(text::title2(self.args.title.clone()))
-            .push(text::body(self.args.message.clone()))
-            .push(text::caption(self.args.secondary.clone()));
+            .push(text::title2(self.args.title.clone()));
 
         if let Some(exe) = self.args.process_exe.as_deref() {
-            let app_name = exe.rsplit('/').next().unwrap_or(exe);
-            let info = column::with_capacity(2)
+            let mut info = column::with_capacity(8)
                 .spacing(spacing.space_xxs)
-                .push(text::heading(app_name.to_owned()))
-                .push(text::monotext(exe.to_owned()));
+                .width(Length::Fill)
+                .push(text::monotext(truncate_for_display(exe, 280)).width(Length::Fill));
+
+            // Whether we have any expandable detail at all.
+            let has_details = self.args.process_cmdline.is_some()
+                || self.args.process_pid.is_some()
+                || self.args.process_cwd.is_some()
+                || self.args.requesting_user.is_some()
+                || self.args.action.is_some();
+
+            if has_details {
+                let label = if self.show_details {
+                    "▾ Hide details"
+                } else {
+                    "▸ Show details"
+                };
+                info = info.push(button::text(label).on_press(Message::ToggleDetails));
+
+                if self.show_details {
+                    let mut details = column::with_capacity(6)
+                        .spacing(spacing.space_xxs)
+                        .width(Length::Fill);
+                    if let Some(cmdline) = self.args.process_cmdline.as_deref() {
+                        details = details.push(detail_row("Command", cmdline));
+                    }
+                    if let Some(pid) = self.args.process_pid {
+                        details = details.push(detail_row("PID", &pid.to_string()));
+                    }
+                    if let Some(cwd) = self.args.process_cwd.as_deref() {
+                        details = details.push(detail_row("Working dir", cwd));
+                    }
+                    if let Some(user) = self.args.requesting_user.as_deref() {
+                        details = details.push(detail_row("Requested by", user));
+                    }
+                    if let Some(action) = self.args.action.as_deref() {
+                        details = details.push(detail_row("Action", action));
+                    }
+                    // Cap the expanded area at ~220px; long fields scroll.
+                    info = info.push(
+                        scrollable(details)
+                            .height(Length::Shrink)
+                            .width(Length::Fill),
+                    );
+                }
+            }
+
             content = content.push(container(info).class(theme::Container::Card).padding(12));
         }
 
@@ -214,12 +262,15 @@ impl ConfirmApp {
         };
         content = content.push(buttons);
 
-        // Dialog card.
-        let card = container(content)
+        // Dialog card. max_width keeps the box readable on ultrawides;
+        // max_height keeps a long expanded cmdline from pushing buttons
+        // off-screen on small displays. Inner `scrollable` handles overflow.
+        let card = container(scrollable(content).width(Length::Shrink))
             .padding(32)
             .width(Length::Shrink)
             .height(Length::Shrink)
-            .max_width(460.0)
+            .max_width(520.0)
+            .max_height(640.0)
             .class(theme::Container::custom(|theme| {
                 let cosmic = theme.cosmic();
                 cosmic::iced::widget::container::Style {
@@ -259,4 +310,27 @@ impl ConfirmApp {
             }))
             .into()
     }
+}
+
+/// One labelled row in the expanded details section. The value is
+/// width-bounded and length-clipped so a 100k-byte argv can't blow up
+/// layout or memory.
+fn detail_row<'a>(label: &str, value: &str) -> Element<'a, Message> {
+    column::with_capacity(2)
+        .width(Length::Fill)
+        .push(text::caption(format!("{label}:")))
+        .push(text::monotext(truncate_for_display(value, 4096)).width(Length::Fill))
+        .into()
+}
+
+/// Hard cap on rendered text length. Anything past `max_chars` is replaced
+/// with an ellipsis so a malicious or accidental megabyte-long argv can't
+/// stall the layout engine.
+fn truncate_for_display(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_owned();
+    }
+    let mut out: String = s.chars().take(max_chars).collect();
+    out.push_str(" … [truncated]");
+    out
 }

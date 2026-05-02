@@ -35,7 +35,7 @@ impl Agent {
         action_id: String,
         message: String,
         _icon_name: String,
-        _details: HashMap<String, String>,
+        details: HashMap<String, String>,
         cookie: String,
         identities: Vec<Identity>,
     ) -> fdo::Result<()> {
@@ -56,10 +56,22 @@ impl Agent {
             }
         };
 
+        let subject_pid = details
+            .get("polkit.subject-pid")
+            .or_else(|| details.get("polkit.caller-pid"))
+            .and_then(|s| s.parse::<i32>().ok());
+        let process_exe = subject_pid.and_then(read_proc_exe);
+        let process_cmdline = subject_pid.and_then(read_proc_cmdline);
+        let process_cwd = subject_pid.and_then(read_proc_cwd);
+        let username_for_task = username.clone();
+
         let queue = self.queue.clone();
         let cookie_for_task = cookie.clone();
         let action_for_task = action_id.clone();
         let message_for_task = message.clone();
+        let exe_for_task = process_exe.clone();
+        let cmdline_for_task = process_cmdline.clone();
+        let cwd_for_task = process_cwd.clone();
 
         let handle = tokio::spawn(async move {
             let _ = session::run(
@@ -69,6 +81,11 @@ impl Agent {
                     message: &message_for_task,
                     cookie: &cookie_for_task,
                     username: &username,
+                    process_exe: exe_for_task.as_deref(),
+                    process_cmdline: cmdline_for_task.as_deref(),
+                    process_pid: subject_pid,
+                    process_cwd: cwd_for_task.as_deref(),
+                    requesting_user: Some(&username_for_task),
                 },
             )
             .await;
@@ -107,4 +124,35 @@ impl Agent {
 fn cookie_prefix(cookie: &str) -> &str {
     let n = 8.min(cookie.len());
     &cookie[..n]
+}
+
+/// Polkit's `details` dict only carries `polkit.subject-pid` and
+/// `polkit.caller-pid`, never the exe path or argv — resolve those from
+/// `/proc` so the helper can render the sudo-style process card.
+fn read_proc_exe(pid: i32) -> Option<String> {
+    std::fs::read_link(format!("/proc/{pid}/exe"))
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
+}
+
+/// Read `/proc/<pid>/cmdline` and convert NUL-separated argv into a
+/// shell-printable single line.
+fn read_proc_cmdline(pid: i32) -> Option<String> {
+    let bytes = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let parts: Vec<String> = bytes
+        .split(|&b| b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
+fn read_proc_cwd(pid: i32) -> Option<String> {
+    std::fs::read_link(format!("/proc/{pid}/cwd"))
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
 }

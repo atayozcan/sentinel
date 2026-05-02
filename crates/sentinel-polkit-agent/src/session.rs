@@ -14,10 +14,23 @@ pub struct AuthInputs<'a> {
     pub message: &'a str,
     pub cookie: &'a str,
     pub username: &'a str,
+    pub process_exe: Option<&'a str>,
+    pub process_cmdline: Option<&'a str>,
+    pub process_pid: Option<i32>,
+    pub process_cwd: Option<&'a str>,
+    pub requesting_user: Option<&'a str>,
 }
 
 pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
-    let req = helper_ui::Request::for_action(inputs.action_id, inputs.message);
+    let req = helper_ui::Request::for_action(helper_ui::ForAction {
+        action_id: inputs.action_id,
+        message: inputs.message,
+        process_exe: inputs.process_exe,
+        process_cmdline: inputs.process_cmdline,
+        process_pid: inputs.process_pid,
+        process_cwd: inputs.process_cwd,
+        requesting_user: inputs.requesting_user,
+    });
     let outcome = helper_ui::run(req)
         .await
         .context("run sentinel-helper")?;
