@@ -25,6 +25,7 @@ use pam::constants::{PamFlag, PamResultCode};
 use pam::module::{PamHandle, PamHooks};
 use proc_info::ProcessInfo;
 use sentinel_config::log_kv::quote as q;
+use sentinel_config::logfmt_session_for_pid;
 use sentinel_config::{HeadlessAction, Outcome, ServiceConfig, format_message, load};
 use std::ffi::CStr;
 use std::time::Instant;
@@ -100,13 +101,18 @@ fn resolve_user(pamh: &PamHandle, uid: u32) -> String {
 }
 
 fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultCode {
+    // The user's actual process (their shell, typically) is the
+    // parent of the privileged binary that dlopened us. That's the
+    // env we want for session enrichment.
+    let session = logfmt_session_for_pid(unsafe { libc_getppid() });
     match cfg.headless_action {
         HeadlessAction::Allow => {
             if cfg.log_attempts {
                 log::warn!(
-                    "event=auth.allow source=headless user={} service={}",
+                    "event=auth.allow source=headless user={} service={}{}",
                     q(user),
-                    q(service)
+                    q(service),
+                    session
                 );
             }
             PamResultCode::PAM_SUCCESS
@@ -114,9 +120,10 @@ fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultC
         HeadlessAction::Deny => {
             if cfg.log_attempts {
                 log::info!(
-                    "event=auth.deny source=headless user={} service={}",
+                    "event=auth.deny source=headless user={} service={}{}",
                     q(user),
-                    q(service)
+                    q(service),
+                    session
                 );
             }
             PamResultCode::PAM_AUTH_ERR
@@ -158,39 +165,47 @@ fn spawn_dialog(
     let dialog_started = Instant::now();
     let result = run_helper(&req);
     let latency_ms = dialog_started.elapsed().as_millis();
+    // Session enrichment via the user's process env (getppid() of
+    // the privileged binary we're loaded into). Empty string on
+    // any failure — see logfmt_session_for_pid.
+    let session = logfmt_session_for_pid(unsafe { libc_getppid() });
 
     if cfg.log_attempts {
         match &result {
             Ok(Outcome::Allow) => log::info!(
-                "event=auth.allow source=dialog user={} service={} process={} uid={} latency_ms={}",
+                "event=auth.allow source=dialog user={} service={} process={} uid={} latency_ms={}{}",
                 q(user),
                 q(service),
                 q(&process.name),
                 requesting_uid,
-                latency_ms
+                latency_ms,
+                session
             ),
             Ok(Outcome::Deny) => log::info!(
-                "event=auth.deny source=dialog user={} service={} process={} uid={} latency_ms={}",
+                "event=auth.deny source=dialog user={} service={} process={} uid={} latency_ms={}{}",
                 q(user),
                 q(service),
                 q(&process.name),
                 requesting_uid,
-                latency_ms
+                latency_ms,
+                session
             ),
             Ok(Outcome::Timeout) => log::info!(
-                "event=auth.timeout source=dialog user={} service={} process={} uid={} latency_ms={}",
+                "event=auth.timeout source=dialog user={} service={} process={} uid={} latency_ms={}{}",
                 q(user),
                 q(service),
                 q(&process.name),
                 requesting_uid,
-                latency_ms
+                latency_ms,
+                session
             ),
             Err(e) => log::warn!(
-                "event=auth.error source=dialog user={} service={} error={} latency_ms={}",
+                "event=auth.error source=dialog user={} service={} error={} latency_ms={}{}",
                 q(user),
                 q(service),
                 q(&e.to_string()),
-                latency_ms
+                latency_ms,
+                session
             ),
         }
     }

@@ -9,6 +9,7 @@ use crate::helper1;
 use anyhow::{Context, Result};
 use log::{info, warn};
 use sentinel_config::log_kv::quote as q;
+use sentinel_config::logfmt_session_for_pid;
 use sentinel_config::{Outcome, ServiceConfig};
 use std::time::Instant;
 
@@ -46,35 +47,45 @@ pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
         .process_exe
         .and_then(sentinel_config::process_basename)
         .unwrap_or("unknown");
+    // Session enrichment via the polkit subject's process env. The
+    // subject is the user's actual process (the GUI app or shell
+    // requesting the privileged action), which is what we want.
+    let session = inputs
+        .process_pid
+        .map(logfmt_session_for_pid)
+        .unwrap_or_default();
 
     match outcome {
         Outcome::Deny => {
             info!(
-                "event=auth.deny source=agent user={} action={} process={} latency_ms={}",
+                "event=auth.deny source=agent user={} action={} process={} latency_ms={}{}",
                 q(inputs.username),
                 q(inputs.action_id),
                 q(process_name),
-                latency_ms
+                latency_ms,
+                session
             );
             return Ok(false);
         }
         Outcome::Timeout => {
             info!(
-                "event=auth.timeout source=agent user={} action={} process={} latency_ms={}",
+                "event=auth.timeout source=agent user={} action={} process={} latency_ms={}{}",
                 q(inputs.username),
                 q(inputs.action_id),
                 q(process_name),
-                latency_ms
+                latency_ms,
+                session
             );
             return Ok(false);
         }
         Outcome::Allow => {
             info!(
-                "event=auth.allow source=agent user={} action={} process={} latency_ms={}",
+                "event=auth.allow source=agent user={} action={} process={} latency_ms={}{}",
                 q(inputs.username),
                 q(inputs.action_id),
                 q(process_name),
-                latency_ms
+                latency_ms,
+                session
             );
         }
     }

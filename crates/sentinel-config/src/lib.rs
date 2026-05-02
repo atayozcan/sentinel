@@ -378,6 +378,106 @@ pub fn process_basename(exe: &str) -> Option<&str> {
         .and_then(|s| s.to_str())
 }
 
+/// systemd-logind session/user metadata, read from the plain
+/// `KEY=value` files under `/run/systemd/sessions/<id>` and
+/// `/run/systemd/users/<uid>`.
+///
+/// systemd warns "do not parse" in those files because the schema
+/// isn't formally stable, but the relevant keys (`STATE`, `TYPE`,
+/// `CLASS`, `REMOTE`, `TTY`) have been stable for over a decade
+/// and are exactly what `loginctl show-session` exposes too. The
+/// parser here is defensive: unknown keys are ignored, missing
+/// values become `None`, malformed lines are skipped.
+///
+/// We avoid the D-Bus path (which would force async + zbus into the
+/// PAM module) and we avoid the libsystemd C dependency.
+pub mod logind {
+    use std::collections::HashMap;
+
+    /// What we surface from `/run/systemd/sessions/<id>`. Values are
+    /// the verbatim systemd strings (e.g. `kind = Some("wayland")`,
+    /// `class = Some("user")`).
+    #[derive(Debug, Default, Clone)]
+    pub struct SessionInfo {
+        pub state: Option<String>,
+        pub kind: Option<String>,
+        pub class: Option<String>,
+        pub remote: Option<bool>,
+        pub tty: Option<String>,
+    }
+
+    pub fn session_info(session_id: &str) -> Option<SessionInfo> {
+        if !is_safe_session_id(session_id) {
+            return None;
+        }
+        let path = format!("/run/systemd/sessions/{session_id}");
+        let raw = std::fs::read_to_string(&path).ok()?;
+        let kv = parse_kv(&raw);
+        Some(SessionInfo {
+            state: kv.get("STATE").cloned(),
+            kind: kv.get("TYPE").cloned(),
+            class: kv.get("CLASS").cloned(),
+            remote: kv.get("REMOTE").map(|v| v == "1"),
+            tty: kv.get("TTY").cloned(),
+        })
+    }
+
+    /// `session_id` is normally a small integer like "1" / "2" but
+    /// can be a string in some seat configurations. Whitelist what
+    /// we'll use as a path component.
+    fn is_safe_session_id(s: &str) -> bool {
+        !s.is_empty() && s.len() <= 16 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    }
+
+    fn parse_kv(s: &str) -> HashMap<String, String> {
+        s.lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .filter_map(|l| {
+                let (k, v) = l.split_once('=')?;
+                Some((k.to_string(), v.to_string()))
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn parse_kv_ignores_comments_and_blanks() {
+            let raw = "# header\nFOO=bar\n\nBAZ=qux\n# tail";
+            let kv = parse_kv(raw);
+            assert_eq!(kv.get("FOO"), Some(&"bar".to_string()));
+            assert_eq!(kv.get("BAZ"), Some(&"qux".to_string()));
+            assert_eq!(kv.len(), 2);
+        }
+
+        #[test]
+        fn parse_kv_handles_values_with_equals() {
+            // `=` after the first one belongs to the value.
+            let kv = parse_kv("KEY=a=b=c");
+            assert_eq!(kv.get("KEY"), Some(&"a=b=c".to_string()));
+        }
+
+        #[test]
+        fn safe_session_id_accepts_typical() {
+            assert!(is_safe_session_id("1"));
+            assert!(is_safe_session_id("42"));
+            assert!(is_safe_session_id("c1"));
+            assert!(is_safe_session_id("session-1"));
+        }
+
+        #[test]
+        fn safe_session_id_rejects_path_traversal_and_garbage() {
+            assert!(!is_safe_session_id(""));
+            assert!(!is_safe_session_id("../etc/shadow"));
+            assert!(!is_safe_session_id("1/../foo"));
+            assert!(!is_safe_session_id(&"x".repeat(17)));
+            assert!(!is_safe_session_id("a b"));
+        }
+    }
+}
+
 /// Best-effort `/proc/<pid>/*` readers shared by the PAM module and
 /// the polkit agent. Each function returns `None` on any error
 /// (missing pid, permission denied, decode failure) — these are
@@ -438,6 +538,68 @@ pub mod procfs {
             Some(parts.join(" "))
         }
     }
+
+    /// Look up a single environment variable from
+    /// `/proc/<pid>/environ` (NUL-separated `KEY=value` entries).
+    /// Used by the PAM module to recover values like `XDG_SESSION_ID`
+    /// from the requesting process — the privileged binary that
+    /// dlopened us scrubbed its own copy.
+    ///
+    /// Caller must validate the returned string before using it as a
+    /// path component or shell argument — `/proc/<pid>/environ` is
+    /// user-controlled.
+    pub fn read_environ_var(pid: i32, key: &str) -> Option<String> {
+        if pid <= 0 {
+            return None;
+        }
+        let bytes = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
+        for entry in bytes.split(|b| *b == 0) {
+            if entry.is_empty() {
+                continue;
+            }
+            let Ok(s) = std::str::from_utf8(entry) else {
+                continue;
+            };
+            let Some((k, v)) = s.split_once('=') else {
+                continue;
+            };
+            if k == key {
+                return Some(v.to_string());
+            }
+        }
+        None
+    }
+}
+
+/// Compose a logfmt fragment with logind session metadata for a
+/// given pid. Returns either an empty string (no XDG_SESSION_ID,
+/// no logind session file, or any read error) or a leading-space
+/// string like ` session_type=wayland session_class=user
+/// session_remote=0` ready to append to an existing log line.
+///
+/// Used by both `pam-sentinel` and `sentinel-polkit-agent` to
+/// enrich `event=auth.*` lines with the session context, so
+/// `journalctl ... | grep session_remote=1` finds remote
+/// escalations across the whole system.
+pub fn logfmt_session_for_pid(pid: i32) -> String {
+    use std::fmt::Write;
+    let Some(sid) = procfs::read_environ_var(pid, "XDG_SESSION_ID") else {
+        return String::new();
+    };
+    let Some(info) = logind::session_info(&sid) else {
+        return String::new();
+    };
+    let mut out = String::new();
+    if let Some(t) = info.kind {
+        let _ = write!(out, " session_type={}", log_kv::quote(&t));
+    }
+    if let Some(c) = info.class {
+        let _ = write!(out, " session_class={}", log_kv::quote(&c));
+    }
+    if let Some(r) = info.remote {
+        let _ = write!(out, " session_remote={}", if r { 1 } else { 0 });
+    }
+    out
 }
 
 /// Logfmt-style helpers for structured audit log lines.
