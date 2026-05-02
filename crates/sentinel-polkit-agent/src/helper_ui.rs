@@ -4,20 +4,13 @@
 //! Unlike `pam-sentinel`'s helper.rs, the agent already runs as the
 //! requesting user — no fork/setuid dance needed. Just `tokio::process`.
 
-use sentinel_config::{ServiceConfig, format_message};
+use sentinel_config::{Outcome, ServiceConfig, format_message};
 use std::process::Stdio;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 const HELPER_PATH: &str = env!("SENTINEL_HELPER_PATH");
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
-    Allow,
-    Deny,
-    Timeout,
-}
 
 #[derive(Debug, Error)]
 pub enum HelperError {
@@ -151,20 +144,9 @@ pub async fn run(req: Request) -> Result<Outcome, HelperError> {
 
     let mut verdict: Option<Outcome> = None;
     while let Some(line) = lines.next_line().await? {
-        match line.trim() {
-            "ALLOW" => {
-                verdict = Some(Outcome::Allow);
-                break;
-            }
-            "DENY" => {
-                verdict = Some(Outcome::Deny);
-                break;
-            }
-            "TIMEOUT" => {
-                verdict = Some(Outcome::Timeout);
-                break;
-            }
-            _ => continue,
+        if let Ok(o) = line.parse::<Outcome>() {
+            verdict = Some(o);
+            break;
         }
     }
 

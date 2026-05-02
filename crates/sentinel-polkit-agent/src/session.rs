@@ -4,12 +4,12 @@
 //! socket) and connecting to `/run/polkit/agent-helper.socket`.
 
 use crate::approval_queue::ApprovalQueue;
-use crate::helper_ui::{self, Outcome};
+use crate::helper_ui;
 use crate::helper1;
 use anyhow::{Context, Result};
 use log::{info, warn};
-use sentinel_config::ServiceConfig;
 use sentinel_config::log_kv::quote as q;
+use sentinel_config::{Outcome, ServiceConfig};
 use std::time::Instant;
 
 pub struct AuthInputs<'a> {

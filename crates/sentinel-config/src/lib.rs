@@ -52,6 +52,57 @@ pub fn bypass_socket_path(uid: u32) -> PathBuf {
     PathBuf::from(format!("/run/user/{uid}")).join(BYPASS_SOCKET_BASENAME)
 }
 
+/// Verdict the helper writes on stdout, parsed back by both the PAM
+/// module's pipe reader and the polkit agent's child-process line
+/// reader. The Display + FromStr impls are the *only* source of truth
+/// for the wire format — keep this enum and those impls in sync.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    Allow,
+    Deny,
+    Timeout,
+}
+
+impl std::fmt::Display for Outcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Allow => "ALLOW",
+            Self::Deny => "DENY",
+            Self::Timeout => "TIMEOUT",
+        })
+    }
+}
+
+/// `Err(())` for unrecognized input. Callers decide the policy: the
+/// PAM module treats anything-not-Allow as `PAM_AUTH_ERR`; the agent
+/// surfaces Timeout separately for logging.
+impl std::str::FromStr for Outcome {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim() {
+            "ALLOW" => Ok(Self::Allow),
+            "DENY" => Ok(Self::Deny),
+            "TIMEOUT" => Ok(Self::Timeout),
+            _ => Err(()),
+        }
+    }
+}
+
+impl Outcome {
+    /// Process exit code matching the verdict: 0 for Allow (auth ok),
+    /// 1 for Deny / Timeout (auth refused). The helper exits with this.
+    pub fn exit_code(self) -> i32 {
+        match self {
+            Self::Allow => 0,
+            Self::Deny | Self::Timeout => 1,
+        }
+    }
+
+    pub fn is_allow(self) -> bool {
+        matches!(self, Self::Allow)
+    }
+}
+
 /// What to do when no Wayland display is reachable from the PAM call site.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -557,5 +608,50 @@ mod tests {
     fn log_kv_backslash_escaped() {
         assert_eq!(log_kv::quote("a\\b"), "a\\b"); // bare backslash without quoting trigger stays
         assert_eq!(log_kv::quote("a b\\c"), "\"a b\\\\c\""); // gets escaped when wrapping
+    }
+
+    // ---- Outcome ----------------------------------------------------------
+
+    #[test]
+    fn outcome_display_strings_are_stable_protocol() {
+        // The wire format the helper writes and consumers parse. Bumping
+        // these is a wire-protocol break.
+        assert_eq!(Outcome::Allow.to_string(), "ALLOW");
+        assert_eq!(Outcome::Deny.to_string(), "DENY");
+        assert_eq!(Outcome::Timeout.to_string(), "TIMEOUT");
+    }
+
+    #[test]
+    fn outcome_round_trips_through_str() {
+        for v in [Outcome::Allow, Outcome::Deny, Outcome::Timeout] {
+            assert_eq!(v.to_string().parse::<Outcome>().unwrap(), v);
+        }
+    }
+
+    #[test]
+    fn outcome_from_str_strips_whitespace() {
+        assert_eq!("ALLOW\n".parse::<Outcome>(), Ok(Outcome::Allow));
+        assert_eq!(" DENY ".parse::<Outcome>(), Ok(Outcome::Deny));
+    }
+
+    #[test]
+    fn outcome_unknown_is_error() {
+        assert!("MAYBE".parse::<Outcome>().is_err());
+        assert!("".parse::<Outcome>().is_err());
+        assert!("allow".parse::<Outcome>().is_err()); // case-sensitive on purpose
+    }
+
+    #[test]
+    fn outcome_exit_code_allow_is_zero() {
+        assert_eq!(Outcome::Allow.exit_code(), 0);
+        assert_eq!(Outcome::Deny.exit_code(), 1);
+        assert_eq!(Outcome::Timeout.exit_code(), 1);
+    }
+
+    #[test]
+    fn outcome_is_allow_helper() {
+        assert!(Outcome::Allow.is_allow());
+        assert!(!Outcome::Deny.is_allow());
+        assert!(!Outcome::Timeout.is_allow());
     }
 }

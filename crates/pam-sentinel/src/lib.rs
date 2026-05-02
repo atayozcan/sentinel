@@ -20,12 +20,12 @@ mod helper;
 mod locale;
 mod proc_info;
 
-use helper::{HelperRequest, HelperResult, run as run_helper};
+use helper::{HelperRequest, run as run_helper};
 use pam::constants::{PamFlag, PamResultCode};
 use pam::module::{PamHandle, PamHooks};
 use proc_info::ProcessInfo;
 use sentinel_config::log_kv::quote as q;
-use sentinel_config::{HeadlessAction, ServiceConfig, format_message, load};
+use sentinel_config::{HeadlessAction, Outcome, ServiceConfig, format_message, load};
 use std::ffi::CStr;
 use std::time::Instant;
 use syslog::{BasicLogger, Facility, Formatter3164};
@@ -160,7 +160,7 @@ fn spawn_dialog(
 
     if cfg.log_attempts {
         match &result {
-            Ok(HelperResult::Allow) => log::info!(
+            Ok(Outcome::Allow) => log::info!(
                 "event=auth.allow source=dialog user={} service={} process={} uid={} latency_ms={}",
                 q(user),
                 q(service),
@@ -168,8 +168,16 @@ fn spawn_dialog(
                 requesting_uid,
                 latency_ms
             ),
-            Ok(HelperResult::Deny) => log::info!(
+            Ok(Outcome::Deny) => log::info!(
                 "event=auth.deny source=dialog user={} service={} process={} uid={} latency_ms={}",
+                q(user),
+                q(service),
+                q(&process.name),
+                requesting_uid,
+                latency_ms
+            ),
+            Ok(Outcome::Timeout) => log::info!(
+                "event=auth.timeout source=dialog user={} service={} process={} uid={} latency_ms={}",
                 q(user),
                 q(service),
                 q(&process.name),
@@ -187,7 +195,7 @@ fn spawn_dialog(
     }
 
     match result {
-        Ok(HelperResult::Allow) => PamResultCode::PAM_SUCCESS,
+        Ok(o) if o.is_allow() => PamResultCode::PAM_SUCCESS,
         _ => PamResultCode::PAM_AUTH_ERR,
     }
 }

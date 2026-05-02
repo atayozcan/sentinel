@@ -6,17 +6,11 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     ForkResult, Pid, User, dup2_stdout, execv, fork, initgroups, pipe, setgid, setuid,
 };
-use sentinel_config::ServiceConfig;
+use sentinel_config::{Outcome, ServiceConfig};
 use std::ffi::CString;
 use std::os::fd::{AsFd, OwnedFd};
 
 pub const HELPER_PATH: &str = env!("SENTINEL_HELPER_PATH");
-
-#[derive(Debug, Clone, Copy)]
-pub enum HelperResult {
-    Allow,
-    Deny,
-}
 
 pub struct HelperRequest<'a> {
     pub cfg: &'a ServiceConfig,
@@ -33,7 +27,7 @@ pub struct HelperRequest<'a> {
     pub requesting_pid: i32,
 }
 
-pub fn run(req: &HelperRequest<'_>) -> Result<HelperResult, String> {
+pub fn run(req: &HelperRequest<'_>) -> Result<Outcome, String> {
     let (read_fd, write_fd) = pipe().map_err(|e| format!("pipe: {e}"))?;
 
     // SAFETY: fork in a PAM module called from a process not yet using threads
@@ -146,11 +140,7 @@ fn read_pipe(fd: &OwnedFd, buf: &mut [u8]) -> nix::Result<usize> {
     nix::unistd::read(fd, buf)
 }
 
-fn parent_wait(
-    child: Pid,
-    read_fd: OwnedFd,
-    req: &HelperRequest<'_>,
-) -> Result<HelperResult, String> {
+fn parent_wait(child: Pid, read_fd: OwnedFd, req: &HelperRequest<'_>) -> Result<Outcome, String> {
     // Helper has its own auto-deny; give it a small grace period.
     let timeout_ms = (i32::try_from(req.cfg.timeout).unwrap_or(30) + 5) * 1000;
     let mut fds = [PollFd::new(read_fd.as_fd(), PollFlags::POLLIN)];
@@ -193,8 +183,8 @@ fn parent_wait(
         .next()
         .unwrap_or("");
 
-    match s {
-        "ALLOW" => Ok(HelperResult::Allow),
-        _ => Ok(HelperResult::Deny),
-    }
+    // Parse the wire verdict via the shared `Outcome` enum. Anything
+    // unrecognized maps to `Deny` — the PAM caller treats anything
+    // other than Allow as `PAM_AUTH_ERR`.
+    Ok(s.parse::<Outcome>().unwrap_or(Outcome::Deny))
 }

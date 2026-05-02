@@ -1,7 +1,6 @@
 mod app;
 mod cli;
 mod i18n;
-mod result;
 
 use app::{ConfirmApp, loaded_outcome};
 use clap::{CommandFactory, Parser};

@@ -1,6 +1,5 @@
 use crate::cli::Args;
 use crate::i18n;
-use crate::result::Outcome;
 use cosmic::iced::advanced::layout::Limits;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::platform_specific::runtime::wayland::layer_surface::SctkLayerSurfaceSettings;
@@ -11,6 +10,7 @@ use cosmic::iced::time::{self, Duration, Instant};
 use cosmic::iced::{Background, Border, Color, Length, Shadow, Subscription, window};
 use cosmic::widget::{button, column, container, progress_bar, row, scrollable, text};
 use cosmic::{Action, Application, Element, Task, executor, theme};
+use sentinel_config::Outcome;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 
