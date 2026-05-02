@@ -31,6 +31,6 @@ That makes the load-bearing piece host-only. The companion
 | .deb     | Planned | Packaging directory will mirror `packaging/arch/`. |
 | .rpm     | Planned | Same. |
 | Flatpak  | Not viable | See above. |
-| Source   | Supported | `./install.sh` or `just install`. |
+| Source   | Supported | `pkexec ./install.sh`. |
 
 If you want to discuss this further, open an issue.

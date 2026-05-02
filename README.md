@@ -84,15 +84,20 @@ next module (typically `pam_unix`, the password prompt).
 .
 ├── Cargo.toml                  # workspace root
 ├── crates/
+│   ├── sentinel-config/        # shared schema, parser, log_kv quoting
 │   ├── pam-sentinel/           # cdylib → /usr/lib/security/pam_sentinel.so
-│   └── sentinel-helper/        # bin    → /usr/lib/sentinel-helper
+│   ├── sentinel-helper/        # bin    → /usr/lib/sentinel-helper
+│   │   └── locales/            # 12 embedded fluent bundles (en-US, de-DE, …)
+│   └── sentinel-polkit-agent/  # bin    → /usr/lib/sentinel-polkit-agent
 ├── config/                     # /etc/security/sentinel.conf, /etc/pam.d/{polkit-1,sudo}
-├── packaging/                  # Arch PKGBUILDs, FLATPAK rationale
+├── packaging/                  # Arch PKGBUILDs, debian + systemd + xdg, FLATPAK rationale
 ├── nix/module.nix              # NixOS module
 ├── flake.nix
 ├── scripts/build-release.sh    # source + binary tarballs
-├── install.sh / uninstall.sh   # transactional installer (auto-rollback)
-└── .github/workflows/release.yml
+├── install.sh / uninstall.sh   # transactional installer (auto-rollback, in-place agent restart)
+└── .github/workflows/
+    ├── ci.yml                  # fmt + clippy + test + build on PRs
+    └── release.yml             # tag v* → builds + GH release
 ```
 
 ## License

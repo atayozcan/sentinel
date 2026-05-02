@@ -21,28 +21,18 @@
 use crate::approval_queue::ApprovalQueue;
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
+use sentinel_config::bypass_socket_path;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixListener;
 use tokio::net::UnixStream;
 
-const SOCKET_BASENAME: &str = "sentinel-agent.sock";
 const HELPER1_BASENAME: &str = "polkit-agent-helper-1";
-
-pub fn socket_path_for_uid(uid: u32) -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        if !dir.is_empty() {
-            return PathBuf::from(dir).join(SOCKET_BASENAME);
-        }
-    }
-    PathBuf::from(format!("/run/user/{uid}")).join(SOCKET_BASENAME)
-}
 
 /// Bind the socket and accept forever. Spawns one task per accepted
 /// connection. Refuses to start if the directory is missing.
 pub async fn serve(uid: u32, queue: ApprovalQueue) -> Result<()> {
-    let path = socket_path_for_uid(uid);
+    let path = bypass_socket_path(uid);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create runtime dir {}", parent.display()))?;
@@ -131,7 +121,7 @@ fn read_proc_comm(pid: i32) -> Option<String> {
 
 /// Best-effort: remove the socket on graceful shutdown.
 pub fn unlink_socket(uid: u32) {
-    let path = socket_path_for_uid(uid);
+    let path = bypass_socket_path(uid);
     if let Err(e) = std::fs::remove_file(&path) {
         if e.kind() != std::io::ErrorKind::NotFound {
             warn!("could not unlink {}: {e}", path.display());

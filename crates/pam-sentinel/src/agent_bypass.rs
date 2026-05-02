@@ -41,11 +41,9 @@ use pam::constants::PamResultCode;
 use pam::module::PamHandle;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
 use std::time::Duration;
 
 const READ_TIMEOUT: Duration = Duration::from_millis(500);
-const SOCKET_BASENAME: &str = "sentinel-agent.sock";
 
 pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
     let user = resolve_user(pamh)?;
@@ -56,7 +54,7 @@ pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
             return None;
         }
     };
-    let path = socket_path_for_uid(uid);
+    let path = sentinel_config::bypass_socket_path(uid);
 
     let mut stream = match UnixStream::connect(&path) {
         Ok(s) => s,
@@ -106,13 +104,4 @@ fn resolve_user(pamh: &PamHandle) -> Option<String> {
         .ok()
         .flatten()
         .and_then(|s| s.to_str().ok().map(str::to_owned))
-}
-
-fn socket_path_for_uid(uid: u32) -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        if !dir.is_empty() {
-            return PathBuf::from(dir).join(SOCKET_BASENAME);
-        }
-    }
-    PathBuf::from(format!("/run/user/{uid}")).join(SOCKET_BASENAME)
 }

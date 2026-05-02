@@ -34,6 +34,24 @@ use std::path::{Path, PathBuf};
 /// crate's `build.rs` from `$SENTINEL_SYSCONFDIR/security/sentinel.conf`.
 pub const CONFIG_PATH: &str = env!("SENTINEL_CONFIG_PATH");
 
+/// Filename of the bypass socket the polkit agent binds and the PAM
+/// module connects to. Lives in the user's `XDG_RUNTIME_DIR` (defaults
+/// to `/run/user/<uid>`). Defined here so both consumers (agent server
+/// + PAM client) agree — diverging path == silently broken bypass.
+pub const BYPASS_SOCKET_BASENAME: &str = "sentinel-agent.sock";
+
+/// Compute the full path to the bypass socket for a given user.
+/// Honors `XDG_RUNTIME_DIR` when set + non-empty, falls back to
+/// `/run/user/<uid>/sentinel-agent.sock`.
+pub fn bypass_socket_path(uid: u32) -> PathBuf {
+    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
+        if !dir.is_empty() {
+            return PathBuf::from(dir).join(BYPASS_SOCKET_BASENAME);
+        }
+    }
+    PathBuf::from(format!("/run/user/{uid}")).join(BYPASS_SOCKET_BASENAME)
+}
+
 /// What to do when no Wayland display is reachable from the PAM call site.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]

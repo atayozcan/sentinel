@@ -17,7 +17,7 @@ path = "src/main.rs"
 # this carefully — Sentinel sits in the PAM auth path and a regression
 # in the helper's layer-shell or input handling can land you with no
 # usable confirmation dialog. Update procedure: bump the rev, run
-# `just dev-test`, smoke-test pkexec end-to-end, then commit.
+# `./scripts/dev-test.sh`, smoke-test pkexec end-to-end, then commit.
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git", rev = "564ef834cec33a948dc10c9b401cf29db5d18373", default-features = false, features = ["wayland", "winit", "tokio", "multi-window"] }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
@@ -27,10 +27,7 @@ fluent-bundle = "0.16"
 fluent-langneg = "0.14"
 unic-langid = "0.9"
 sentinel-config = { path = "../sentinel-config" }
-serde.workspace = true
-log.workspace = true
 anyhow.workspace = true
-thiserror.workspace = true
 
 # ---------------------------------------------------------------------------
 # Distribution packaging metadata

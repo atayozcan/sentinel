@@ -142,17 +142,12 @@ fn spawn_dialog(
     let formatted_message = format_message(&cfg.message, user, service, &process.name);
     let formatted_secondary = format_message(&cfg.secondary, user, service, &process.name);
 
-    // Local mutable cfg with the formatted title swapped in so the
-    // helper sees substituted tokens. We only touch `title`; everything
-    // else stays a borrow into the caller's ServiceConfig.
-    let mut cfg_for_helper = cfg.clone();
-    cfg_for_helper.title = formatted_title;
-
     let req = HelperRequest {
-        cfg: &cfg_for_helper,
+        cfg,
         user,
         service,
         process,
+        formatted_title: &formatted_title,
         formatted_message: &formatted_message,
         formatted_secondary: &formatted_secondary,
         target_uid: requesting_uid,

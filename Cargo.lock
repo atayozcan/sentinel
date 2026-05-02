@@ -4355,11 +4355,8 @@ dependencies = [
  "fluent-bundle",
  "fluent-langneg 0.14.2",
  "libcosmic",
- "log",
  "rand 0.10.1",
  "sentinel-config",
- "serde",
- "thiserror 2.0.18",
  "unic-langid",
 ]
 

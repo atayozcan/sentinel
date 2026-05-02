@@ -23,6 +23,10 @@ pub struct HelperRequest<'a> {
     pub user: &'a str,
     pub service: &'a str,
     pub process: &'a ProcessInfo,
+    /// Title with `%u`/`%s`/`%p` already substituted. Lives outside
+    /// `cfg` so we don't need to clone the whole `ServiceConfig` just
+    /// to swap one field in the caller.
+    pub formatted_title: &'a str,
     pub formatted_message: &'a str,
     pub formatted_secondary: &'a str,
     pub target_uid: u32,
@@ -97,7 +101,7 @@ fn child_exec(req: &HelperRequest<'_>, write_fd: OwnedFd) -> ! {
     };
     push(&mut argv, HELPER_PATH);
     push(&mut argv, "--title");
-    push(&mut argv, &req.cfg.title);
+    push(&mut argv, req.formatted_title);
     push(&mut argv, "--message");
     push(&mut argv, req.formatted_message);
     push(&mut argv, "--secondary");
