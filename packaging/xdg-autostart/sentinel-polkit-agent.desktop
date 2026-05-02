@@ -6,6 +6,14 @@ Exec=/usr/lib/sentinel-polkit-agent
 Categories=System;
 NoDisplay=true
 X-GNOME-Autostart-Phase=Initialization
+# Critical: tell systemd-xdg-autostart-generator NOT to wrap this entry.
+# When systemd wraps it as `app-*@autostart.service`, the agent runs as a
+# child of `user@.service` and inherits the manager-session sessionid — so
+# polkit's RegisterAuthenticationAgent rejects it with "Passed session and
+# the session the caller is in differs". By skipping the systemd wrapper
+# we let cosmic-session / Hyprland / Sway autostart spawn the agent as a
+# direct child of the compositor, inheriting the graphical sessionid.
+X-GNOME-Autostart-enabled=false
 # polkit only allows ONE agent per session. Restrict to compositors that
 # don't already ship their own agent.
 OnlyShowIn=COSMIC;Hyprland;sway;Wayfire;wlroots;
