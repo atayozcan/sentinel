@@ -81,9 +81,9 @@ impl Agent {
             .get("polkit.subject-pid")
             .or_else(|| details.get("polkit.caller-pid"))
             .and_then(|s| s.parse::<i32>().ok());
-        let process_exe = subject_pid.and_then(read_proc_exe);
-        let process_cmdline = subject_pid.and_then(read_proc_cmdline);
-        let process_cwd = subject_pid.and_then(read_proc_cwd);
+        let process_exe = subject_pid.and_then(sentinel_config::procfs::read_exe);
+        let process_cmdline = subject_pid.and_then(sentinel_config::procfs::read_cmdline);
+        let process_cwd = subject_pid.and_then(sentinel_config::procfs::read_cwd);
         let username_for_task = username.clone();
 
         // Re-read config per call so an admin's edit to
@@ -169,35 +169,4 @@ impl Agent {
 fn cookie_prefix(cookie: &str) -> &str {
     let n = 8.min(cookie.len());
     &cookie[..n]
-}
-
-/// Polkit's `details` dict only carries `polkit.subject-pid` and
-/// `polkit.caller-pid`, never the exe path or argv — resolve those from
-/// `/proc` so the helper can render the sudo-style process card.
-fn read_proc_exe(pid: i32) -> Option<String> {
-    std::fs::read_link(format!("/proc/{pid}/exe"))
-        .ok()
-        .and_then(|p| p.into_os_string().into_string().ok())
-}
-
-/// Read `/proc/<pid>/cmdline` and convert NUL-separated argv into a
-/// shell-printable single line.
-fn read_proc_cmdline(pid: i32) -> Option<String> {
-    let bytes = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
-    let parts: Vec<String> = bytes
-        .split(|&b| b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
-        .collect();
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join(" "))
-    }
-}
-
-fn read_proc_cwd(pid: i32) -> Option<String> {
-    std::fs::read_link(format!("/proc/{pid}/cwd"))
-        .ok()
-        .and_then(|p| p.into_os_string().into_string().ok())
 }

@@ -334,6 +334,68 @@ pub const DEFAULT_TITLE: &str = "Authentication Required";
 pub const DEFAULT_MESSAGE: &str = "The application \"%p\" is requesting elevated privileges.";
 pub const DEFAULT_SECONDARY: &str = "Click \"Allow\" to continue or \"Deny\" to cancel.";
 
+/// Best-effort `/proc/<pid>/*` readers shared by the PAM module and
+/// the polkit agent. Each function returns `None` on any error
+/// (missing pid, permission denied, decode failure) — these are
+/// diagnostic lookups whose absence is acceptable, not security
+/// checks.
+pub mod procfs {
+    /// `/proc/<pid>/comm` — the kernel-tracked process name (15 chars
+    /// max + NUL, kernel-truncated if longer). Trailing newline is
+    /// stripped.
+    pub fn read_comm(pid: i32) -> Option<String> {
+        if pid <= 0 {
+            return None;
+        }
+        std::fs::read_to_string(format!("/proc/{pid}/comm"))
+            .ok()
+            .map(|s| s.trim().to_owned())
+    }
+
+    /// `/proc/<pid>/exe` — readlink of the absolute path to the
+    /// running binary. Returns `None` if the link is unreadable
+    /// (e.g. `PR_SET_DUMPABLE=0` cross-uid).
+    pub fn read_exe(pid: i32) -> Option<String> {
+        if pid <= 0 {
+            return None;
+        }
+        std::fs::read_link(format!("/proc/{pid}/exe"))
+            .ok()
+            .and_then(|p| p.into_os_string().into_string().ok())
+    }
+
+    /// `/proc/<pid>/cwd` — readlink of the process's current working
+    /// directory.
+    pub fn read_cwd(pid: i32) -> Option<String> {
+        if pid <= 0 {
+            return None;
+        }
+        std::fs::read_link(format!("/proc/{pid}/cwd"))
+            .ok()
+            .and_then(|p| p.into_os_string().into_string().ok())
+    }
+
+    /// `/proc/<pid>/cmdline` — NUL-separated argv joined into a
+    /// shell-printable single line. Returns `None` for kernel threads
+    /// and processes with empty cmdlines.
+    pub fn read_cmdline(pid: i32) -> Option<String> {
+        if pid <= 0 {
+            return None;
+        }
+        let bytes = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+        let parts: Vec<String> = bytes
+            .split(|&b| b == 0)
+            .filter(|s| !s.is_empty())
+            .map(|s| String::from_utf8_lossy(s).into_owned())
+            .collect();
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" "))
+        }
+    }
+}
+
 /// Logfmt-style helpers for structured audit log lines.
 ///
 /// We intentionally don't pull in a logfmt crate — the format is

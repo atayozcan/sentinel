@@ -21,7 +21,7 @@
 use crate::approval_queue::ApprovalQueue;
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
-use sentinel_config::bypass_socket_path;
+use sentinel_config::{bypass_socket_path, procfs};
 use std::os::unix::fs::PermissionsExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixListener;
@@ -67,7 +67,7 @@ async fn handle_one(mut stream: UnixStream, queue: ApprovalQueue) -> Result<()> 
     // PR_SET_DUMPABLE=0 (set by NoNewPrivileges in helper-1's unit).
     // /proc/<pid>/comm is readable in that case and is enough for our
     // basename check.
-    let peer_comm = read_proc_comm(peer_pid);
+    let peer_comm = procfs::read_comm(peer_pid);
     debug!("agent socket: incoming peer uid={peer_uid} pid={peer_pid} comm={peer_comm:?}");
 
     if peer_uid != 0 {
@@ -110,13 +110,6 @@ fn comm_matches(name: &str) -> bool {
     const HELPER1_COMM_TRUNCATED: &str = "polkit-agent-he";
     let trimmed = name.trim();
     trimmed == HELPER1_BASENAME || trimmed == HELPER1_COMM_TRUNCATED
-}
-
-fn read_proc_comm(pid: i32) -> Option<String> {
-    if pid <= 0 {
-        return None;
-    }
-    std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()
 }
 
 /// Best-effort: remove the socket on graceful shutdown.
