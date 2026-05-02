@@ -121,6 +121,16 @@ impl Application for ConfirmApp {
         }
         use cosmic::iced::keyboard::{Event as KeyEvent, Key, key::Named};
 
+        // Keyboard accessibility:
+        // - Tab / Shift+Tab cycles between Allow and Deny (iced default,
+        //   we don't intercept it).
+        // - Enter / Space activates the focused button (iced default).
+        // - Escape always denies (we intercept here so it works whether
+        //   or not a widget has focus).
+        // - We deliberately do NOT auto-focus the Allow button on
+        //   surface creation: a sticky-keys user mashing Return must
+        //   not auto-allow. The randomize_buttons knob also pushes
+        //   against muscle-memory click-through.
         let tick = time::every(Duration::from_millis(100)).map(Message::Tick);
         let keys = cosmic::iced::event::listen_with(|event, _status, _id| match event {
             cosmic::iced::Event::Keyboard(KeyEvent::KeyPressed {
