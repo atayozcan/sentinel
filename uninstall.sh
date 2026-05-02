@@ -36,6 +36,35 @@ elif [[ $ASSUME_YES -eq 0 ]]; then
     error "Refusing to uninstall non-interactively. Pass -y/--yes to confirm."
 fi
 
+# -------------- stop running agent ----------------------------------------
+#
+# The agent binary is about to be deleted. Without stopping the running
+# process: it stays alive (binary stays mapped) but any future polkit
+# auth that triggers a fresh `polkit-agent-helper-1` -> `pam_sentinel.so`
+# load will fail because the .so is gone. Cleaner to stop it now.
+#
+# We can also unlink any orphan bypass socket so the next install starts
+# from a clean state.
+
+stop_polkit_agent() {
+    local uid="${PKEXEC_UID:-${SUDO_UID:-}}"
+    if [[ -z "$uid" ]]; then
+        warn "Could not identify invoking user; skipping agent stop."
+        return 0
+    fi
+    if pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1; then
+        step "Stopping running polkit agent…"
+        pkill -TERM -u "$uid" -f sentinel-polkit-agent 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            sleep 0.2
+            pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1 || break
+        done
+        pkill -KILL -u "$uid" -f sentinel-polkit-agent 2>/dev/null || true
+    fi
+    rm -f -- "/run/user/$uid/sentinel-agent.sock"
+}
+stop_polkit_agent
+
 # -------------- state-file driven uninstall --------------------------------
 
 if [[ -f "$STATE_FILE" ]]; then
@@ -92,6 +121,16 @@ FALLBACK_PATHS=(
     "$SYSCONFDIR/pam.d/polkit-1"
     "$SYSCONFDIR/xdg/autostart/sentinel-polkit-agent.desktop"
     "$SYSCONFDIR/systemd/system/polkit-agent-helper@.service.d/sentinel.conf"
+    "$PREFIX/share/man/man1/sentinel-helper.1"
+    "$PREFIX/share/man/man1/sentinel-polkit-agent.1"
+    "$PREFIX/share/man/man5/sentinel.conf.5"
+    "$PREFIX/share/man/man8/pam_sentinel.8"
+    "$PREFIX/share/bash-completion/completions/sentinel-helper"
+    "$PREFIX/share/bash-completion/completions/sentinel-polkit-agent"
+    "$PREFIX/share/fish/vendor_completions.d/sentinel-helper.fish"
+    "$PREFIX/share/fish/vendor_completions.d/sentinel-polkit-agent.fish"
+    "$PREFIX/share/zsh/site-functions/_sentinel-helper"
+    "$PREFIX/share/zsh/site-functions/_sentinel-polkit-agent"
 )
 
 for p in "${FALLBACK_PATHS[@]}"; do

@@ -233,6 +233,133 @@ chmod 644 "$STATE_FILE"
 rm -f -- "$ROLLBACK_LOG"
 INSTALL_OK=1
 
+# -------------- restart polkit agent in place ------------------------------
+#
+# Without this the user has to log out and back in for the new binary
+# to take effect (XDG autostart only fires at session start; there's no
+# supervisor that respawns the agent on demand). We do better:
+#
+#   1. Identify the invoking user + their compositor.
+#   2. Sanity-check that this script's audit sessionid matches the
+#      compositor's — that's the only sessionid the new agent will
+#      inherit, and polkit's RegisterAuthenticationAgent rejects any
+#      mismatch with "Passed session and the session the caller is
+#      in differs". When the install was kicked off from a terminal
+#      that's a descendant of the compositor, this matches naturally
+#      (audit sessionid is set at login by setloginuid and inherited
+#      through forks, including across the pkexec boundary).
+#   3. Kill any running agent owned by that user, then re-spawn the
+#      freshly-installed binary as that user with just enough env
+#      copied from the live compositor that it can paint a dialog.
+#
+# If any check fails, fall through with a warning — the installed
+# binary will still take over at next graphical login.
+#
+# Note: this depends on the install being kicked off from a graphical
+# session (the typical `pkexec ./install.sh` flow). When running via
+# automation or a TTY console session, the sessionid check fails and
+# we skip the restart.
+
+restart_polkit_agent() {
+    local uid="${PKEXEC_UID:-${SUDO_UID:-}}"
+    local user="${BUILD_USER:-}"
+    if [[ -z "$user" || -z "$uid" ]]; then
+        warn "No invoking user; agent will respawn at next graphical login."
+        return 0
+    fi
+
+    local comp_pid=""
+    for c in cosmic-comp Hyprland sway wayfire kwin_wayland; do
+        comp_pid=$(pgrep -u "$uid" -x "$c" 2>/dev/null | head -1)
+        [[ -n "$comp_pid" ]] && break
+    done
+    if [[ -z "$comp_pid" ]]; then
+        warn "No supported compositor running for $user; agent will respawn at next graphical login."
+        return 0
+    fi
+
+    local our_sid comp_sid
+    our_sid=$(cat /proc/self/sessionid 2>/dev/null || echo 0)
+    comp_sid=$(cat "/proc/$comp_pid/sessionid" 2>/dev/null || echo 1)
+    if [[ "$our_sid" != "$comp_sid" ]]; then
+        warn "Cannot restart agent in place — installer sessionid ($our_sid) ≠ compositor sessionid ($comp_sid)."
+        warn "Re-run from a terminal opened inside the compositor's session, or relog to activate."
+        return 0
+    fi
+
+    if pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1; then
+        step "Stopping running polkit agent…"
+        pkill -TERM -u "$uid" -f sentinel-polkit-agent 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            sleep 0.2
+            pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1 || break
+        done
+        # Force-kill any stragglers that ignored SIGTERM.
+        pkill -KILL -u "$uid" -f sentinel-polkit-agent 2>/dev/null || true
+        # Clean any stale bypass socket the dying agent may have left.
+        rm -f -- "/run/user/$uid/sentinel-agent.sock"
+    fi
+
+    # Pull just the env vars the agent + helper need from the live
+    # compositor. /proc/<pid>/environ is NUL-separated.
+    local runtime_dir="/run/user/$uid"
+    local wayland_disp
+    wayland_disp=$(tr '\0' '\n' < "/proc/$comp_pid/environ" 2>/dev/null \
+        | sed -n 's/^WAYLAND_DISPLAY=//p' | head -1)
+    if [[ -z "$wayland_disp" ]]; then
+        wayland_disp=$(ls "$runtime_dir"/wayland-* 2>/dev/null \
+            | grep -v '\.lock' | head -1 | xargs -n1 basename 2>/dev/null)
+    fi
+    local xdg_session_id
+    xdg_session_id=$(tr '\0' '\n' < "/proc/$comp_pid/environ" 2>/dev/null \
+        | sed -n 's/^XDG_SESSION_ID=//p' | head -1)
+
+    step "Starting freshly-installed polkit agent as $user…"
+    # Spawn fully detached:
+    #   - `setsid -f` puts the agent in its own session and forks, so
+    #     this install script returns immediately.
+    #   - `setpriv` (instead of runuser) drops uid/gid without opening
+    #     a PAM session, so no parent process needs to stick around in
+    #     wait() to perform PAM session cleanup.
+    # Output is /dev/null because the install script will exit shortly
+    # and we don't want the agent inheriting a doomed terminal.
+    setsid -f setpriv \
+        --reuid="$user" --regid="$user" --init-groups \
+        --reset-env \
+        -- env \
+        HOME="$(getent passwd "$user" | cut -d: -f6)" \
+        USER="$user" LOGNAME="$user" \
+        PATH="/usr/local/bin:/usr/bin:/bin" \
+        XDG_RUNTIME_DIR="$runtime_dir" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" \
+        ${wayland_disp:+WAYLAND_DISPLAY="$wayland_disp"} \
+        ${xdg_session_id:+XDG_SESSION_ID="$xdg_session_id"} \
+        "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent" \
+        </dev/null >/dev/null 2>&1
+
+    # Wait briefly for the agent to bind its socket — that's the
+    # closest proxy for "successfully started".
+    local agent_ok=0
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 0.2
+        if [[ -S "/run/user/$uid/sentinel-agent.sock" ]] \
+            && pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1; then
+            agent_ok=1
+            break
+        fi
+    done
+
+    if [[ $agent_ok -eq 1 ]]; then
+        info "Polkit agent restarted in place (no relogin required)."
+        AGENT_RESTARTED=1
+    else
+        warn "Polkit agent did not bind its socket within 2 s; will retry at next login."
+    fi
+}
+
+AGENT_RESTARTED=0
+restart_polkit_agent
+
 info "Installation complete."
 cat <<EOF
 
@@ -246,6 +373,20 @@ Installed:
   $SYSCONFDIR/systemd/system/polkit-agent-helper@.service.d/sentinel.conf$([[ $INSTALL_SUDO -eq 1 ]] && printf '\n  %s' "$SYSCONFDIR/pam.d/sudo")
 
 State file: $STATE_FILE
+EOF
+
+if [[ $AGENT_RESTARTED -eq 1 ]]; then
+    cat <<EOF
+
+The polkit agent is already running the new build. Verify with:
+
+  pgrep -af sentinel-polkit-agent
+  pkexec true                          # exactly one Sentinel dialog
+
+To remove: pkexec ./uninstall.sh
+EOF
+else
+    cat <<EOF
 
 The polkit agent autostarts at next graphical login. Log out and back
 in to activate it. Once active:
@@ -255,3 +396,4 @@ in to activate it. Once active:
 
 To remove: pkexec ./uninstall.sh
 EOF
+fi
