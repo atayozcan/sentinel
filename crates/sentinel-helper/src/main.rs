@@ -1,5 +1,6 @@
 mod app;
 mod cli;
+mod i18n;
 mod result;
 
 use app::{ConfirmApp, loaded_outcome};
@@ -15,6 +16,10 @@ fn main() -> anyhow::Result<()> {
     if let Some(g) = &args.generate {
         return run_gen(g);
     }
+
+    // Initialize the global translation bundle from $LANG/$LC_*
+    // before we touch any UI. Subsequent t() calls are infallible.
+    i18n::init();
 
     if std::env::var_os("WAYLAND_DISPLAY").is_none() {
         eprintln!("{BIN}: WAYLAND_DISPLAY not set; this helper is Wayland-only");

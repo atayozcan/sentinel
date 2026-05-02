@@ -23,10 +23,19 @@
 use anyhow::{Context, Result};
 use log::{debug, warn};
 use std::path::Path;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 const HELPER_SOCKET_PATH: &str = "/run/polkit/agent-helper.socket";
+
+/// Hard cap on how long we'll wait for helper-1 to emit SUCCESS/FAILURE.
+/// In normal operation helper-1 returns within tens of milliseconds:
+/// pam_sentinel.so's bypass check is sub-second and PAM has nothing
+/// else to do. Anything past 10 s indicates a hung helper-1 (sandbox
+/// config mismatch, blocked socket, dead PAM module) and we'd rather
+/// fail this auth than block the agent task forever.
+const HELPER1_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct Run<'a> {
     pub username: &'a str,
@@ -34,6 +43,20 @@ pub struct Run<'a> {
 }
 
 pub async fn run(args: Run<'_>) -> Result<bool> {
+    match tokio::time::timeout(HELPER1_TIMEOUT, run_inner(args)).await {
+        Ok(res) => res,
+        Err(_) => {
+            warn!(
+                "polkit-agent-helper-1 did not produce a verdict within {:?}; \
+                 treating as FAILURE",
+                HELPER1_TIMEOUT
+            );
+            Ok(false)
+        }
+    }
+}
+
+async fn run_inner(args: Run<'_>) -> Result<bool> {
     if !Path::new(HELPER_SOCKET_PATH).exists() {
         anyhow::bail!(
             "polkit helper socket {HELPER_SOCKET_PATH} not found — \

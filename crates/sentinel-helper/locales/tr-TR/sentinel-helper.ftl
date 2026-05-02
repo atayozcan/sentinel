@@ -1,0 +1,22 @@
+# sentinel-helper UI chrome — Türkçe.
+
+dialog-title-default     = Kimlik Doğrulama Gerekli
+dialog-message-default   = "{$process}" uygulaması yükseltilmiş yetkiler istiyor.
+dialog-secondary-default = Devam etmek için "İzin Ver", iptal etmek için "Reddet" düğmesine tıklayın.
+
+button-allow = İzin Ver
+button-deny  = Reddet
+
+toggle-show-details = ▸ Ayrıntıları göster
+toggle-hide-details = ▾ Ayrıntıları gizle
+
+# {$seconds} otomatik reddetmeye kalan saniye sayısıdır.
+auto-deny-in = {$seconds} sn sonra otomatik reddedilecek
+
+detail-command      = Komut
+detail-pid          = PID
+detail-cwd          = Çalışma dizini
+detail-requested-by = İsteyen kullanıcı
+detail-action       = İşlem
+
+truncated-suffix = … [kesildi]

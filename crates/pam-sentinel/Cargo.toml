@@ -14,11 +14,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pam-bindings = "0.1"
-serde.workspace = true
-toml.workspace = true
+sentinel-config = { path = "../sentinel-config" }
 syslog.workspace = true
 log.workspace = true
 nix.workspace = true
-anyhow.workspace = true
 
 [build-dependencies]

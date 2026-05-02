@@ -4,6 +4,7 @@
 //! Unlike `pam-sentinel`'s helper.rs, the agent already runs as the
 //! requesting user — no fork/setuid dance needed. Just `tokio::process`.
 
+use sentinel_config::{ServiceConfig, format_message};
 use std::process::Stdio;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -45,7 +46,12 @@ pub struct Request {
 
 pub struct ForAction<'a> {
     pub action_id: &'a str,
-    pub message: &'a str,
+    /// Effective config for the `polkit-1` PAM service. Drives
+    /// title/timeout/randomize and provides the message/secondary
+    /// templates.
+    pub cfg: &'a ServiceConfig,
+    /// Username being authenticated. Substituted as `%u` in templates.
+    pub username: &'a str,
     pub process_exe: Option<&'a str>,
     pub process_cmdline: Option<&'a str>,
     pub process_pid: Option<i32>,
@@ -54,19 +60,43 @@ pub struct ForAction<'a> {
 }
 
 impl Request {
+    /// Build a [`Request`] from a polkit `BeginAuthentication` invocation
+    /// combined with the loaded `polkit-1` config. Token substitution
+    /// (`%u`/`%s`/`%p`) is applied to title/message/secondary.
+    ///
+    /// We deliberately ignore polkit's per-action message string
+    /// (`message` arg of `BeginAuthentication`). Polkit localizes it
+    /// via gettext and the user's glibc locale install state, which is
+    /// out of our control — on systems where the requested locale
+    /// isn't fully installed at the glibc level, polkit silently falls
+    /// back to English even when our helper has the locale baked in.
+    /// Always using the templated config message keeps the dialog's
+    /// language consistent. Admins who want polkit's per-action
+    /// phrasing can disable Sentinel for that specific action via PAM
+    /// config; the action_id is also surfaced in the expandable
+    /// details panel.
     pub fn for_action(args: ForAction<'_>) -> Self {
-        let body = if args.message.is_empty() {
-            format!("An application is requesting authorisation for {}.", args.action_id)
-        } else {
-            args.message.to_string()
-        };
+        // Process name for %p — basename of the requesting exe path.
+        // Falls back to "unknown" so substitutions never produce empty
+        // tokens that look like a bug.
+        let process_name = args
+            .process_exe
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+
+        const SERVICE: &str = "polkit-1";
+        let title = format_message(&args.cfg.title, args.username, SERVICE, process_name);
+        let body = format_message(&args.cfg.message, args.username, SERVICE, process_name);
+        let secondary = format_message(&args.cfg.secondary, args.username, SERVICE, process_name);
+
         Self {
-            title: "Authentication Required".to_string(),
+            title,
             message: body,
-            secondary: "Click \"Allow\" to continue or \"Deny\" to cancel.".to_string(),
-            timeout: 30,
-            min_time: 500,
-            randomize: true,
+            secondary,
+            timeout: args.cfg.timeout as u64,
+            min_time: args.cfg.min_display_time_ms as u64,
+            randomize: args.cfg.randomize_buttons,
             process_exe: args.process_exe.map(str::to_string),
             process_cmdline: args.process_cmdline.map(str::to_string),
             process_pid: args.process_pid,
@@ -80,11 +110,16 @@ impl Request {
 /// Spawn the helper, await its outcome.
 pub async fn run(req: Request) -> Result<Outcome, HelperError> {
     let mut cmd = Command::new(HELPER_PATH);
-    cmd.arg("--title").arg(&req.title)
-        .arg("--message").arg(&req.message)
-        .arg("--secondary").arg(&req.secondary)
-        .arg("--timeout").arg(req.timeout.to_string())
-        .arg("--min-time").arg(req.min_time.to_string());
+    cmd.arg("--title")
+        .arg(&req.title)
+        .arg("--message")
+        .arg(&req.message)
+        .arg("--secondary")
+        .arg(&req.secondary)
+        .arg("--timeout")
+        .arg(req.timeout.to_string())
+        .arg("--min-time")
+        .arg(req.min_time.to_string());
     if req.randomize {
         cmd.arg("--randomize");
     }
@@ -117,9 +152,18 @@ pub async fn run(req: Request) -> Result<Outcome, HelperError> {
     let mut verdict: Option<Outcome> = None;
     while let Some(line) = lines.next_line().await? {
         match line.trim() {
-            "ALLOW" => { verdict = Some(Outcome::Allow); break; }
-            "DENY" => { verdict = Some(Outcome::Deny); break; }
-            "TIMEOUT" => { verdict = Some(Outcome::Timeout); break; }
+            "ALLOW" => {
+                verdict = Some(Outcome::Allow);
+                break;
+            }
+            "DENY" => {
+                verdict = Some(Outcome::Deny);
+                break;
+            }
+            "TIMEOUT" => {
+                verdict = Some(Outcome::Timeout);
+                break;
+            }
             _ => continue,
         }
     }

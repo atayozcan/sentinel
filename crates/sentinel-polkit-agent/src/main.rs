@@ -108,8 +108,8 @@ async fn run(args: Args) -> Result<()> {
 
     let conn = Connection::system().await.context("connect system bus")?;
 
-    let subject = subject::current(args.session_id.as_deref())
-        .context("build unix-session subject")?;
+    let subject =
+        subject::current(args.session_id.as_deref()).context("build unix-session subject")?;
 
     let agent = agent::Agent::new(uid, queue);
     conn.object_server()

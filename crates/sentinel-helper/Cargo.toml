@@ -18,6 +18,10 @@ clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 clap_mangen = "0.2"
 rand = "0.10.1"
+fluent-bundle = "0.16"
+fluent-langneg = "0.14"
+unic-langid = "0.9"
+sentinel-config = { path = "../sentinel-config" }
 serde.workspace = true
 log.workspace = true
 anyhow.workspace = true

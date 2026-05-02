@@ -1,5 +1,7 @@
 use crate::cli::Args;
+use crate::i18n;
 use crate::result::Outcome;
+use cosmic::iced::advanced::layout::Limits;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::platform_specific::runtime::wayland::layer_surface::SctkLayerSurfaceSettings;
 use cosmic::iced::platform_specific::shell::commands::layer_surface::{
@@ -7,7 +9,6 @@ use cosmic::iced::platform_specific::shell::commands::layer_surface::{
 };
 use cosmic::iced::time::{self, Duration, Instant};
 use cosmic::iced::{Background, Border, Color, Length, Shadow, Subscription, window};
-use cosmic::iced::advanced::layout::Limits;
 use cosmic::widget::{button, column, container, progress_bar, row, scrollable, text};
 use cosmic::{Action, Application, Element, Task, executor, theme};
 use std::sync::Arc;
@@ -114,14 +115,13 @@ impl Application for ConfirmApp {
         use cosmic::iced::keyboard::{Event as KeyEvent, Key, key::Named};
 
         let tick = time::every(Duration::from_millis(100)).map(Message::Tick);
-        let keys =
-            cosmic::iced::event::listen_with(|event, _status, _id| match event {
-                cosmic::iced::Event::Keyboard(KeyEvent::KeyPressed {
-                    key: Key::Named(Named::Escape),
-                    ..
-                }) => Some(Message::Escape),
-                _ => None,
-            });
+        let keys = cosmic::iced::event::listen_with(|event, _status, _id| match event {
+            cosmic::iced::Event::Keyboard(KeyEvent::KeyPressed {
+                key: Key::Named(Named::Escape),
+                ..
+            }) => Some(Message::Escape),
+            _ => None,
+        });
         Subscription::batch([tick, keys])
     }
 
@@ -185,10 +185,27 @@ impl ConfirmApp {
     fn dialog_view(&self) -> Element<'_, Message> {
         let spacing = theme::active().cosmic().spacing;
 
-        let mut content = column::with_capacity(10)
+        // Resolve the three admin-overridable strings. Each one is
+        // either:
+        //   - a custom value the admin set in /etc/security/sentinel.conf
+        //     (passed through verbatim — admins write whatever language),
+        //   - or still equal to the built-in `sentinel-config` default,
+        //     in which case we substitute the locale's translation so a
+        //     fresh install actually feels localized.
+        let title_text = self.localized_title();
+        let message_text = self.localized_message();
+        let secondary_text = self.localized_secondary();
+
+        let mut content = column::with_capacity(12)
             .spacing(spacing.space_s)
             .align_x(Horizontal::Center)
-            .push(text::title2(self.args.title.clone()));
+            .push(text::title2(title_text));
+
+        // Primary message — the "what's happening". Skipped if empty so
+        // an admin who explicitly clears it doesn't get whitespace.
+        if !message_text.is_empty() {
+            content = content.push(text::body(message_text));
+        }
 
         if let Some(exe) = self.args.process_exe.as_deref() {
             let mut info = column::with_capacity(8)
@@ -205,9 +222,9 @@ impl ConfirmApp {
 
             if has_details {
                 let label = if self.show_details {
-                    "▾ Hide details"
+                    i18n::t("toggle-hide-details")
                 } else {
-                    "▸ Show details"
+                    i18n::t("toggle-show-details")
                 };
                 info = info.push(button::text(label).on_press(Message::ToggleDetails));
 
@@ -216,19 +233,20 @@ impl ConfirmApp {
                         .spacing(spacing.space_xxs)
                         .width(Length::Fill);
                     if let Some(cmdline) = self.args.process_cmdline.as_deref() {
-                        details = details.push(detail_row("Command", cmdline));
+                        details = details.push(detail_row(&i18n::t("detail-command"), cmdline));
                     }
                     if let Some(pid) = self.args.process_pid {
-                        details = details.push(detail_row("PID", &pid.to_string()));
+                        details =
+                            details.push(detail_row(&i18n::t("detail-pid"), &pid.to_string()));
                     }
                     if let Some(cwd) = self.args.process_cwd.as_deref() {
-                        details = details.push(detail_row("Working dir", cwd));
+                        details = details.push(detail_row(&i18n::t("detail-cwd"), cwd));
                     }
                     if let Some(user) = self.args.requesting_user.as_deref() {
-                        details = details.push(detail_row("Requested by", user));
+                        details = details.push(detail_row(&i18n::t("detail-requested-by"), user));
                     }
                     if let Some(action) = self.args.action.as_deref() {
-                        details = details.push(detail_row("Action", action));
+                        details = details.push(detail_row(&i18n::t("detail-action"), action));
                     }
                     // Cap the expanded area at ~220px; long fields scroll.
                     info = info.push(
@@ -242,23 +260,38 @@ impl ConfirmApp {
             content = content.push(container(info).class(theme::Container::Card).padding(12));
         }
 
+        // Secondary instruction line — sits just above the buttons.
+        if !secondary_text.is_empty() {
+            content = content.push(text::caption(secondary_text));
+        }
+
         if self.args.timeout > 0 {
             let frac = (self.elapsed_ms as f32) / ((self.args.timeout * 1000) as f32);
             let remaining = self.args.timeout.saturating_sub(self.elapsed_ms / 1000);
             content = content.push(progress_bar::determinate_linear(frac.min(1.0)));
-            content = content.push(text::caption(format!("Auto-deny in {remaining}s")));
+            content = content.push(text::caption(i18n::t_int(
+                "auto-deny-in",
+                "seconds",
+                remaining as i64,
+            )));
         }
 
-        let mut allow_btn = button::suggested("Allow");
+        let mut allow_btn = button::suggested(i18n::t("button-allow"));
         if self.allow_enabled {
             allow_btn = allow_btn.on_press(Message::Allow);
         }
-        let deny_btn = button::destructive("Deny").on_press(Message::Deny);
+        let deny_btn = button::destructive(i18n::t("button-deny")).on_press(Message::Deny);
 
         let buttons = if self.allow_first {
-            row::with_capacity(2).spacing(12).push(allow_btn).push(deny_btn)
+            row::with_capacity(2)
+                .spacing(12)
+                .push(allow_btn)
+                .push(deny_btn)
         } else {
-            row::with_capacity(2).spacing(12).push(deny_btn).push(allow_btn)
+            row::with_capacity(2)
+                .spacing(12)
+                .push(deny_btn)
+                .push(allow_btn)
         };
         content = content.push(buttons);
 
@@ -310,6 +343,68 @@ impl ConfirmApp {
             }))
             .into()
     }
+
+    /// Title text. If the admin hasn't customized it (still equal to
+    /// `sentinel_config::DEFAULT_TITLE`), render the locale's
+    /// `dialog-title-default`. Otherwise pass the admin's value through.
+    fn localized_title(&self) -> String {
+        if self.args.title == sentinel_config::DEFAULT_TITLE {
+            i18n::t("dialog-title-default")
+        } else {
+            self.args.title.clone()
+        }
+    }
+
+    /// Same logic for the body message. The default template carries a
+    /// `{$process}` placeholder which the i18n bundle expands; the
+    /// process name comes from the basename of `--process-exe` (falling
+    /// back to "unknown" so substitutions never produce empty tokens).
+    ///
+    /// Note: when comparing against `DEFAULT_MESSAGE` we look at the
+    /// already-substituted form the caller passed us. The PAM module
+    /// runs `format_message(&cfg.message, ...)` and sends the result —
+    /// so we re-run the same substitution against `DEFAULT_MESSAGE` to
+    /// get a comparable string.
+    fn localized_message(&self) -> String {
+        let proc_name = self.process_name_for_subst();
+        let default_substituted = sentinel_config::format_message(
+            sentinel_config::DEFAULT_MESSAGE,
+            self.args.requesting_user.as_deref().unwrap_or(""),
+            self.args.action.as_deref().unwrap_or(""),
+            &proc_name,
+        );
+        if self.args.message == default_substituted {
+            i18n::t_str("dialog-message-default", "process", &proc_name)
+        } else {
+            self.args.message.clone()
+        }
+    }
+
+    /// Same logic for the secondary line. The default has no tokens, so
+    /// no substitution dance.
+    fn localized_secondary(&self) -> String {
+        let secondary_substituted = sentinel_config::format_message(
+            sentinel_config::DEFAULT_SECONDARY,
+            self.args.requesting_user.as_deref().unwrap_or(""),
+            self.args.action.as_deref().unwrap_or(""),
+            &self.process_name_for_subst(),
+        );
+        if self.args.secondary == secondary_substituted {
+            i18n::t("dialog-secondary-default")
+        } else {
+            self.args.secondary.clone()
+        }
+    }
+
+    fn process_name_for_subst(&self) -> String {
+        self.args
+            .process_exe
+            .as_deref()
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string()
+    }
 }
 
 /// One labelled row in the expanded details section. The value is
@@ -331,6 +426,7 @@ fn truncate_for_display(s: &str, max_chars: usize) -> String {
         return s.to_owned();
     }
     let mut out: String = s.chars().take(max_chars).collect();
-    out.push_str(" … [truncated]");
+    out.push(' ');
+    out.push_str(&i18n::t("truncated-suffix"));
     out
 }

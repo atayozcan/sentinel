@@ -4,16 +4,20 @@
 //! socket) and connecting to `/run/polkit/agent-helper.socket`.
 
 use crate::approval_queue::ApprovalQueue;
-use crate::helper1;
 use crate::helper_ui::{self, Outcome};
+use crate::helper1;
 use anyhow::{Context, Result};
 use log::{info, warn};
+use sentinel_config::ServiceConfig;
 
 pub struct AuthInputs<'a> {
     pub action_id: &'a str,
-    pub message: &'a str,
     pub cookie: &'a str,
     pub username: &'a str,
+    /// Effective `polkit-1` config loaded by the caller (per-call, so
+    /// edits to `/etc/security/sentinel.conf` take effect on the next
+    /// auth without restarting the agent).
+    pub cfg: &'a ServiceConfig,
     pub process_exe: Option<&'a str>,
     pub process_cmdline: Option<&'a str>,
     pub process_pid: Option<i32>,
@@ -24,16 +28,15 @@ pub struct AuthInputs<'a> {
 pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
     let req = helper_ui::Request::for_action(helper_ui::ForAction {
         action_id: inputs.action_id,
-        message: inputs.message,
+        cfg: inputs.cfg,
+        username: inputs.username,
         process_exe: inputs.process_exe,
         process_cmdline: inputs.process_cmdline,
         process_pid: inputs.process_pid,
         process_cwd: inputs.process_cwd,
         requesting_user: inputs.requesting_user,
     });
-    let outcome = helper_ui::run(req)
-        .await
-        .context("run sentinel-helper")?;
+    let outcome = helper_ui::run(req).await.context("run sentinel-helper")?;
 
     match outcome {
         Outcome::Deny | Outcome::Timeout => {

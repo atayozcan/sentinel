@@ -1,0 +1,120 @@
+name: ci
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs of this workflow when a new commit is pushed
+# to the same ref. Keeps PR feedback fast and CI minutes cheap.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+  # Keep the install-path env vars in sync with build.rs defaults so
+  # the workspace builds without needing the install.sh wrapper.
+  SENTINEL_PREFIX: /usr
+  SENTINEL_SYSCONFDIR: /etc
+  SENTINEL_LIBEXECDIR: lib
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Format + clippy. Cheap, fail-fast — runs without --release so it picks
+  # up test code too.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpam0g-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            pkg-config
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # ---------------------------------------------------------------------------
+  # Tests. Runs against stable Rust on Linux. The PAM module is a cdylib
+  # so we run `cargo test -p pam-sentinel` separately to exercise its
+  # internal unit tests; the rest go through the workspace runner.
+  # ---------------------------------------------------------------------------
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpam0g-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            pkg-config
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo test (workspace)
+        run: cargo test --workspace --locked
+
+  # ---------------------------------------------------------------------------
+  # Smoke build of the full workspace. Catches build-system regressions
+  # (build.rs env vars, feature flag combinations) that pure `cargo
+  # check` wouldn't.
+  # ---------------------------------------------------------------------------
+  build:
+    name: cargo build (release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpam0g-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            pkg-config
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo build --release
+        run: cargo build --release --workspace --locked

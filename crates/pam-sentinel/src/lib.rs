@@ -15,16 +15,16 @@
 //! * **disabled**: `enabled = false` in config; `PAM_IGNORE`.
 
 mod agent_bypass;
-mod config;
 mod display;
 mod helper;
+mod locale;
 mod proc_info;
 
-use config::{HeadlessAction, ServiceConfig, format_message, load};
 use helper::{HelperRequest, HelperResult, run as run_helper};
 use pam::constants::{PamFlag, PamResultCode};
 use pam::module::{PamHandle, PamHooks};
 use proc_info::ProcessInfo;
+use sentinel_config::{HeadlessAction, ServiceConfig, format_message, load};
 use std::ffi::CStr;
 use syslog::{BasicLogger, Facility, Formatter3164};
 
@@ -34,11 +34,7 @@ struct PamSentinel;
 pam::pam_hooks!(PamSentinel);
 
 impl PamHooks for PamSentinel {
-    fn sm_authenticate(
-        pamh: &mut PamHandle,
-        _args: Vec<&CStr>,
-        _flags: PamFlag,
-    ) -> PamResultCode {
+    fn sm_authenticate(pamh: &mut PamHandle, _args: Vec<&CStr>, _flags: PamFlag) -> PamResultCode {
         init_logger();
 
         if let Some(rc) = agent_bypass::check_agent_bypass(pamh) {
@@ -72,12 +68,12 @@ impl PamHooks for PamSentinel {
         spawn_dialog(&cfg, &service, &user, &process, process_pid, requesting_uid)
     }
 
-    fn sm_setcred(
-        _pamh: &mut PamHandle,
-        _args: Vec<&CStr>,
-        _flags: PamFlag,
-    ) -> PamResultCode {
-        PamResultCode::PAM_SUCCESS
+    fn sm_setcred(_pamh: &mut PamHandle, _args: Vec<&CStr>, _flags: PamFlag) -> PamResultCode {
+        // We're an auth-only module — we don't issue or revoke
+        // credentials. Returning PAM_SUCCESS would be a lie that says
+        // "yes I established/destroyed credentials"; PAM_IGNORE tells
+        // the stack to skip us, which is correct.
+        PamResultCode::PAM_IGNORE
     }
 }
 
@@ -116,7 +112,9 @@ fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultC
             PamResultCode::PAM_AUTH_ERR
         }
         HeadlessAction::Password => {
-            log::debug!("{MODULE_NAME}: no display, falling through to password (service {service})");
+            log::debug!(
+                "{MODULE_NAME}: no display, falling through to password (service {service})"
+            );
             PamResultCode::PAM_IGNORE
         }
     }
@@ -130,11 +128,18 @@ fn spawn_dialog(
     requesting_pid: i32,
     requesting_uid: u32,
 ) -> PamResultCode {
+    let formatted_title = format_message(&cfg.title, user, service, &process.name);
     let formatted_message = format_message(&cfg.message, user, service, &process.name);
     let formatted_secondary = format_message(&cfg.secondary, user, service, &process.name);
 
+    // Local mutable cfg with the formatted title swapped in so the
+    // helper sees substituted tokens. We only touch `title`; everything
+    // else stays a borrow into the caller's ServiceConfig.
+    let mut cfg_for_helper = cfg.clone();
+    cfg_for_helper.title = formatted_title;
+
     let req = HelperRequest {
-        cfg,
+        cfg: &cfg_for_helper,
         user,
         service,
         process,
@@ -156,9 +161,9 @@ fn spawn_dialog(
                 "{MODULE_NAME}: user {user}, service {service}, process {}: DENY",
                 process.name
             ),
-            Err(e) => log::warn!(
-                "{MODULE_NAME}: helper error for user {user}, service {service}: {e}"
-            ),
+            Err(e) => {
+                log::warn!("{MODULE_NAME}: helper error for user {user}, service {service}: {e}")
+            }
         }
     }
 

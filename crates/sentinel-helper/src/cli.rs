@@ -11,7 +11,10 @@ pub struct Args {
     #[arg(long, default_value = "Authentication Required")]
     pub title: String,
 
-    #[arg(long, default_value = "An application is requesting elevated privileges.")]
+    #[arg(
+        long,
+        default_value = "An application is requesting elevated privileges."
+    )]
     pub message: String,
 
     #[arg(long, default_value = "Click Allow to continue or Deny to cancel.")]

@@ -1,4 +1,3 @@
-use crate::config::ServiceConfig;
 use crate::proc_info::ProcessInfo;
 use nix::errno::Errno;
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
@@ -7,6 +6,7 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     ForkResult, Pid, User, dup2_stdout, execv, fork, initgroups, pipe, setgid, setuid,
 };
+use sentinel_config::ServiceConfig;
 use std::ffi::CString;
 use std::os::fd::{AsFd, OwnedFd};
 
@@ -72,6 +72,16 @@ fn child_exec(req: &HelperRequest<'_>, write_fd: OwnedFd) -> ! {
         std::env::set_var("HOME", &user.dir);
         std::env::set_var("USER", &user.name);
         std::env::set_var("LOGNAME", &user.name);
+
+        // Forward locale-relevant env vars from the requesting user's
+        // own process so the helper picks the right translation. This
+        // env was scrubbed by sudo / polkit-agent-helper-1, so we have
+        // to recover it from /proc/<requesting_pid>/environ. Values
+        // are validated against a strict whitelist before use — see
+        // `crate::locale` for the threat model.
+        for (key, value) in crate::locale::read_locale_env(req.requesting_pid) {
+            std::env::set_var(key, value);
+        }
     }
 
     if dup2_stdout(write_fd.as_fd()).is_err() {
@@ -183,12 +193,4 @@ fn parent_wait(
         "ALLOW" => Ok(HelperResult::Allow),
         _ => Ok(HelperResult::Deny),
     }
-}
-
-// Suppress unused-warning on req fields until callers fully wire up.
-#[allow(dead_code)]
-fn _unused(req: &HelperRequest<'_>) {
-    let _ = req.user;
-    let _ = req.service;
-    let _ = req.requesting_pid;
 }

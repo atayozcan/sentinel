@@ -52,9 +52,7 @@ pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
     let uid = match nix::unistd::User::from_name(&user) {
         Ok(Some(u)) => u.uid.as_raw(),
         _ => {
-            log::debug!(
-                "agent_bypass: PAM_USER={user} has no passwd entry; falling through"
-            );
+            log::debug!("agent_bypass: PAM_USER={user} has no passwd entry; falling through");
             return None;
         }
     };
@@ -94,9 +92,7 @@ pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
             Some(PamResultCode::PAM_SUCCESS)
         }
         other => {
-            log::warn!(
-                "agent_bypass: agent declined (resp={other:?}); falling through to dialog"
-            );
+            log::warn!("agent_bypass: agent declined (resp={other:?}); falling through to dialog");
             None
         }
     }

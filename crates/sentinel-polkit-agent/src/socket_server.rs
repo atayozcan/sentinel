@@ -9,7 +9,11 @@
 //! Per-connection check (the agent's side of the trust model):
 //! 1. `SO_PEERCRED` — peer uid must be 0 (the socket-activated
 //!    `polkit-agent-helper-1` runs as root).
-//! 2. `/proc/<peer_pid>/exe` basename must be `polkit-agent-helper-1`.
+//! 2. `/proc/<peer_pid>/comm` must equal `polkit-agent-helper-1` or
+//!    its 15-char kernel truncation `polkit-agent-he`. We read `comm`
+//!    rather than `exe` because helper-1's systemd sandbox
+//!    (`NoNewPrivileges`) sets `PR_SET_DUMPABLE=0`, making `exe`
+//!    unreadable cross-uid.
 //!
 //! On a valid connection we pop one non-expired approval from the
 //! queue and write "OK\n"; otherwise "NO\n".
@@ -48,8 +52,7 @@ pub async fn serve(uid: u32, queue: ApprovalQueue) -> Result<()> {
         let _ = std::fs::remove_file(&path);
     }
 
-    let listener = UnixListener::bind(&path)
-        .with_context(|| format!("bind {}", path.display()))?;
+    let listener = UnixListener::bind(&path).with_context(|| format!("bind {}", path.display()))?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("chmod 0600 {}", path.display()))?;
 
@@ -75,22 +78,16 @@ async fn handle_one(mut stream: UnixStream, queue: ApprovalQueue) -> Result<()> 
     // /proc/<pid>/comm is readable in that case and is enough for our
     // basename check.
     let peer_comm = read_proc_comm(peer_pid);
-    debug!(
-        "agent socket: incoming peer uid={peer_uid} pid={peer_pid} comm={peer_comm:?}"
-    );
+    debug!("agent socket: incoming peer uid={peer_uid} pid={peer_pid} comm={peer_comm:?}");
 
     if peer_uid != 0 {
-        warn!(
-            "agent socket: rejecting non-root connection (uid={peer_uid} pid={peer_pid})"
-        );
+        warn!("agent socket: rejecting non-root connection (uid={peer_uid} pid={peer_pid})");
         let _ = stream.write_all(b"NO\n").await;
         return Ok(());
     }
     let comm_ok = peer_comm.as_deref().map(comm_matches).unwrap_or(false);
     if !comm_ok {
-        warn!(
-            "agent socket: rejecting non-helper peer (pid={peer_pid} comm={peer_comm:?})"
-        );
+        warn!("agent socket: rejecting non-helper peer (pid={peer_pid} comm={peer_comm:?})");
         let _ = stream.write_all(b"NO\n").await;
         return Ok(());
     }
@@ -104,9 +101,7 @@ async fn handle_one(mut stream: UnixStream, queue: ApprovalQueue) -> Result<()> 
             stream.write_all(b"OK\n").await.context("write OK")?;
         }
         None => {
-            warn!(
-                "agent socket: no pending approval for peer pid {peer_pid}; replying NO"
-            );
+            warn!("agent socket: no pending approval for peer pid {peer_pid}; replying NO");
             let _ = stream.write_all(b"NO\n").await;
         }
     }
@@ -117,11 +112,14 @@ fn comm_matches(name: &str) -> bool {
     // /proc/<pid>/comm is the kernel-tracked process name (TASK_COMM_LEN
     // = 16 chars max, including NUL). The full executable name is
     // "polkit-agent-helper-1" (21 chars) which exceeds that, so the
-    // kernel truncates it. Match the truncated form.
+    // kernel truncates it to 15 chars. We accept either form, exactly,
+    // and nothing else — the previous `starts_with("polkit-agent-")`
+    // matched arbitrary tools (polkit-agent-foo, polkit-agent-debugger)
+    // which is broader than necessary. SO_PEERCRED already constrains
+    // the peer to root, but defense in depth is cheap.
+    const HELPER1_COMM_TRUNCATED: &str = "polkit-agent-he";
     let trimmed = name.trim();
-    trimmed == HELPER1_BASENAME
-        || trimmed == "polkit-agent-he"   // 15-char truncation as set by execve
-        || trimmed.starts_with("polkit-agent-")
+    trimmed == HELPER1_BASENAME || trimmed == HELPER1_COMM_TRUNCATED
 }
 
 fn read_proc_comm(pid: i32) -> Option<String> {
@@ -141,3 +139,37 @@ pub fn unlink_socket(uid: u32) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn comm_matches_full_name() {
+        assert!(comm_matches("polkit-agent-helper-1"));
+    }
+
+    #[test]
+    fn comm_matches_kernel_truncation() {
+        assert!(comm_matches("polkit-agent-he"));
+    }
+
+    #[test]
+    fn comm_matches_strips_trailing_newline() {
+        // /proc/<pid>/comm always ends with \n.
+        assert!(comm_matches("polkit-agent-helper-1\n"));
+    }
+
+    #[test]
+    fn comm_matches_rejects_other_polkit_tools() {
+        assert!(!comm_matches("polkit-agent-foo"));
+        assert!(!comm_matches("polkit-agent-debugger"));
+        assert!(!comm_matches("polkitd"));
+    }
+
+    #[test]
+    fn comm_matches_rejects_unrelated() {
+        assert!(!comm_matches("bash"));
+        assert!(!comm_matches(""));
+        assert!(!comm_matches("polkit"));
+    }
+}

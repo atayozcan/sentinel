@@ -4,14 +4,22 @@
 //! `pam_sentinel.so` (running inside `polkit-agent-helper-1`) connects
 //! to the agent's Unix socket, the server calls `take_one()` to dequeue
 //! a non-expired approval. Each approval is one-shot (consumed on
-//! first read) and short-lived (5 s TTL by default).
+//! first read) and short-lived.
+//!
+//! TTL is intentionally tight (1 s). The bypass socket is consumed by
+//! `polkit-agent-helper-1` within milliseconds of `agent::session::run`
+//! pushing the approval — anything past 1 s means helper-1 isn't going
+//! to consume it, and we'd rather the approval expire than be claimed
+//! by an unrelated auth that races in. Combined with the per-Agent
+//! `inflight` serialization mutex, the practical window for cross-
+//! action mis-pairing is bounded by the helper-1 setup time.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
-const DEFAULT_TTL: Duration = Duration::from_secs(5);
+const DEFAULT_TTL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
 pub struct Approval {
