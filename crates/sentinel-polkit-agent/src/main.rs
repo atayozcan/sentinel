@@ -121,11 +121,66 @@ async fn run(args: Args) -> Result<()> {
         .await
         .context("build Authority proxy")?;
 
-    authority
-        .register_authentication_agent(&subject, "", AGENT_OBJECT_PATH)
-        .await
-        .context("Authority.RegisterAuthenticationAgent")?;
-    info!("registered as polkit auth agent (object path {AGENT_OBJECT_PATH})");
+    // Retry loop: another polkit agent (cosmic-osd, polkit-gnome,
+    // polkit-kde, …) may currently hold the registration, especially
+    // right after install.sh's restart-in-place flow where the
+    // compositor's supervisor races us to respawn its own agent. We
+    // back off and retry; if the competitor eventually exits, gets
+    // killed, or backs off, we win. Compositors that hard-respawn
+    // their agent forever (cosmic-session → cosmic-osd) are not
+    // solvable from this side — see the install.sh diagnostic.
+    const REGISTER_RETRIES: u32 = 8;
+    const REGISTER_BACKOFF: std::time::Duration = std::time::Duration::from_millis(500);
+    let mut last_err: Option<zbus::Error> = None;
+    let mut registered = false;
+    for attempt in 1..=REGISTER_RETRIES {
+        match authority
+            .register_authentication_agent(&subject, "", AGENT_OBJECT_PATH)
+            .await
+        {
+            Ok(()) => {
+                registered = true;
+                if attempt > 1 {
+                    info!(
+                        "registered as polkit auth agent on attempt {attempt} \
+                         (a competitor was holding the registration)"
+                    );
+                } else {
+                    info!("registered as polkit auth agent (object path {AGENT_OBJECT_PATH})");
+                }
+                break;
+            }
+            Err(e) => {
+                // zbus::Error::MethodError's Display only prints the
+                // D-Bus error name (e.g. `org.freedesktop.PolicyKit1.
+                // Error.Failed`) without the description; Debug
+                // includes both. We want the description because
+                // "already exists" is what discriminates the
+                // race-with-another-agent case from genuine errors.
+                let err_dbg = format!("{e:?}");
+                let is_already_exists = err_dbg.contains("already exists");
+                if !is_already_exists {
+                    // Different error — propagate immediately, no retry
+                    // (typos in the object path, polkitd not running,
+                    // session id mismatch, etc. — none of these
+                    // self-heal by waiting).
+                    return Err(e).context("Authority.RegisterAuthenticationAgent");
+                }
+                warn!(
+                    "registration attempt {attempt}/{REGISTER_RETRIES}: \
+                     another agent is registered, retrying in {REGISTER_BACKOFF:?}"
+                );
+                last_err = Some(e);
+                tokio::time::sleep(REGISTER_BACKOFF).await;
+            }
+        }
+    }
+    if !registered {
+        return Err(last_err
+            .map(anyhow::Error::from)
+            .unwrap_or_else(|| anyhow::anyhow!("registration failed after retries")))
+        .context("Authority.RegisterAuthenticationAgent");
+    }
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .context("install SIGTERM handler")?;

@@ -300,8 +300,11 @@ restart_polkit_agent() {
         rm -f -- "/run/user/$uid/sentinel-agent.sock"
     fi
 
-    # Pull just the env vars the agent + helper need from the live
-    # compositor. /proc/<pid>/environ is NUL-separated.
+    # Pre-compute env vars BEFORE the race-sensitive kill+spawn step
+    # below — every millisecond between killing the competitor and
+    # spawning Sentinel is a chance for cosmic-session (or another
+    # supervisor) to respawn the competitor and steal the polkit
+    # registration.
     local runtime_dir="/run/user/$uid"
     local wayland_disp
     wayland_disp=$(tr '\0' '\n' < "/proc/$comp_pid/environ" 2>/dev/null \
@@ -313,8 +316,30 @@ restart_polkit_agent() {
     local xdg_session_id
     xdg_session_id=$(tr '\0' '\n' < "/proc/$comp_pid/environ" 2>/dev/null \
         | sed -n 's/^XDG_SESSION_ID=//p' | head -1)
+    local user_home
+    user_home=$(getent passwd "$user" | cut -d: -f6)
+
+    # Polkit only registers ONE authentication agent per session. If
+    # something else has the registration (cosmic-osd, polkit-gnome,
+    # polkit-kde, mate-polkit, lxpolkit), our spawn below will fail
+    # with `org.freedesktop.PolicyKit1.Error.Failed: An authentication
+    # agent already exists for the given subject`. Knock the
+    # competitors down so the next spawn wins. Compositors that
+    # supervise their own polkit agent (cosmic-session → cosmic-osd)
+    # will respawn theirs within ~50–200 ms, so we kill + spawn in
+    # immediate succession with NO work between.
+    local competitors_killed=0
+    for comp_name in cosmic-osd polkit-gnome-authentication-agent-1 polkit-kde-authentication-agent-1 lxpolkit mate-polkit; do
+        if pgrep -u "$uid" -f "$comp_name" >/dev/null 2>&1; then
+            pkill -TERM -u "$uid" -f "$comp_name" 2>/dev/null || true
+            competitors_killed=1
+        fi
+    done
 
     step "Starting freshly-installed polkit agent as $user…"
+    if [[ $competitors_killed -eq 1 ]]; then
+        step "  (racing competing polkit agent's respawn)"
+    fi
     # Spawn fully detached:
     #   - `setsid -f` puts the agent in its own session and forks, so
     #     this install script returns immediately.
@@ -327,7 +352,7 @@ restart_polkit_agent() {
         --reuid="$user" --regid="$user" --init-groups \
         --reset-env \
         -- env \
-        HOME="$(getent passwd "$user" | cut -d: -f6)" \
+        HOME="$user_home" \
         USER="$user" LOGNAME="$user" \
         PATH="/usr/local/bin:/usr/bin:/bin" \
         XDG_RUNTIME_DIR="$runtime_dir" \
@@ -337,23 +362,48 @@ restart_polkit_agent() {
         "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent" \
         </dev/null >/dev/null 2>&1
 
-    # Wait briefly for the agent to bind its socket — that's the
-    # closest proxy for "successfully started".
+    # Wait for BOTH:
+    #   1. socket bound (agent is alive)
+    #   2. journal logged "registered as polkit auth agent" (the
+    #      D-Bus RegisterAuthenticationAgent succeeded — without
+    #      this, the agent is alive but not authoritative and
+    #      `pkexec` will go through the PAM dialog path instead of
+    #      the bypass).
+    # Up to 3 seconds total; that's long enough for cosmic-osd to
+    # respawn-and-fail behind us if we won the race.
     local agent_ok=0
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
+    local agent_started_marker
+    agent_started_marker=$(date '+%Y-%m-%d %H:%M:%S')
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
         sleep 0.2
         if [[ -S "/run/user/$uid/sentinel-agent.sock" ]] \
-            && pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1; then
+            && pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1 \
+            && journalctl -t sentinel-polkit-agent \
+                 --since "$agent_started_marker" --no-pager 2>/dev/null \
+                 | grep -q "registered as polkit auth agent"; then
             agent_ok=1
             break
         fi
     done
 
     if [[ $agent_ok -eq 1 ]]; then
-        info "Polkit agent restarted in place (no relogin required)."
+        info "Polkit agent restarted and registered with polkitd."
         AGENT_RESTARTED=1
     else
-        warn "Polkit agent did not bind its socket within 2 s; will retry at next login."
+        warn "Polkit agent didn't confirm registration within 3 s."
+        warn ""
+        warn "The agent retries internally for a few more seconds, so it may"
+        warn "still take over once a competitor exits. Verify with:"
+        warn "  journalctl -t sentinel-polkit-agent --since '1 minute ago' | tail"
+        warn ""
+        warn "If a session-supervised agent (cosmic-osd, plasma's polkit agent)"
+        warn "keeps grabbing the registration via respawn, the only reliable"
+        warn "long-term workaround is to disable that competitor — e.g. for"
+        warn "COSMIC: 'pkexec chmod -x /usr/bin/cosmic-osd' (loses brightness/"
+        warn "volume OSDs but keeps Sentinel as the sole polkit agent)."
+        warn ""
+        warn "pkexec / sudo will still work in the meantime — the dialog just"
+        warn "renders via the slower PAM-fork path instead of the bypass."
     fi
 }
 
