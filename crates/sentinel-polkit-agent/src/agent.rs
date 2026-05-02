@@ -1,9 +1,9 @@
 //! `org.freedesktop.PolicyKit1.AuthenticationAgent` server side.
 
+use crate::approval_queue::ApprovalQueue;
 use crate::identity::{self, Identity};
 use crate::session::{self, AuthInputs};
 use log::{error, info, warn};
-use sentinel_token::Issuer;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -11,16 +11,16 @@ use tokio::task::JoinHandle;
 use zbus::fdo;
 
 pub struct Agent {
-    issuer: Arc<Issuer>,
     own_uid: u32,
+    queue: ApprovalQueue,
     sessions: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 impl Agent {
-    pub fn new(issuer: Arc<Issuer>, own_uid: u32) -> Self {
+    pub fn new(own_uid: u32, queue: ApprovalQueue) -> Self {
         Self {
-            issuer,
             own_uid,
+            queue,
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -39,13 +39,14 @@ impl Agent {
         cookie: String,
         identities: Vec<Identity>,
     ) -> fdo::Result<()> {
-        info!("BeginAuthentication action={action_id} cookie={}", cookie_prefix(&cookie));
+        info!(
+            "BeginAuthentication action={action_id} cookie={}",
+            cookie_prefix(&cookie)
+        );
 
         let Some(uid) = identity::pick(&identities, self.own_uid) else {
             warn!("no usable unix-user identity in BeginAuthentication");
-            return Err(fdo::Error::Failed(
-                "no acceptable identities".to_string(),
-            ));
+            return Err(fdo::Error::Failed("no acceptable identities".to_string()));
         };
         let username = match nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(uid)) {
             Ok(Some(u)) => u.name,
@@ -55,15 +56,14 @@ impl Agent {
             }
         };
 
-        let issuer = self.issuer.clone();
+        let queue = self.queue.clone();
         let cookie_for_task = cookie.clone();
         let action_for_task = action_id.clone();
         let message_for_task = message.clone();
 
-        // Run the auth flow in a task so CancelAuthentication can abort it.
         let handle = tokio::spawn(async move {
             let _ = session::run(
-                issuer,
+                queue,
                 AuthInputs {
                     action_id: &action_for_task,
                     message: &message_for_task,
@@ -74,16 +74,11 @@ impl Agent {
             .await;
         });
 
-        // Register the task so CancelAuthentication can find it.
         {
             let mut sessions = self.sessions.lock().await;
             sessions.insert(cookie.clone(), handle);
         }
 
-        // Wait for the task to finish (or be cancelled). Either way, we
-        // remove ourselves from the map and return Ok — polkit's cookie
-        // validation outcome was reported by helper-1's privileged D-Bus
-        // channel, not by our return value.
         let join_result = {
             let mut sessions = self.sessions.lock().await;
             sessions.remove(&cookie)
@@ -92,12 +87,13 @@ impl Agent {
             let _ = handle.await;
         }
 
-        info!("BeginAuthentication complete cookie={}", cookie_prefix(&cookie));
+        info!(
+            "BeginAuthentication complete cookie={}",
+            cookie_prefix(&cookie)
+        );
         Ok(())
     }
 
-    /// Polkit calls this if auth is no longer needed (another agent
-    /// approved, the calling app gave up, etc).
     async fn cancel_authentication(&self, cookie: String) -> fdo::Result<()> {
         info!("CancelAuthentication cookie={}", cookie_prefix(&cookie));
         let mut sessions = self.sessions.lock().await;

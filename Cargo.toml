@@ -4,11 +4,10 @@ members = [
     "crates/pam-sentinel",
     "crates/sentinel-helper",
     "crates/sentinel-polkit-agent",
-    "crates/sentinel-token",
 ]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.4.0-dev"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/atayozcan/sentinel"

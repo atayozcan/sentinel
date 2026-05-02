@@ -66,7 +66,9 @@ package() {
     install -Dm755 target/release/sentinel-helper \
         "$pkgdir/usr/lib/sentinel-helper"
 
-    install -Dm644 target/release/libpam_sentinel.so \
+    # 0755 (not 0644) — libpam under systemd-sandboxed PAM stacks
+    # refuses to dlopen .so files without the execute bit.
+    install -Dm755 target/release/libpam_sentinel.so \
         "$pkgdir/usr/lib/security/pam_sentinel.so"
 
     install -Dm644 config/sentinel.conf \
@@ -85,6 +87,9 @@ package() {
 
     install -Dm644 packaging/systemd/sentinel-polkit-agent.service \
         "$pkgdir/usr/lib/systemd/user/sentinel-polkit-agent.service"
+
+    install -Dm644 packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf \
+        "$pkgdir/etc/systemd/system/polkit-agent-helper@.service.d/sentinel.conf"
 
     install -Dm644 packaging/xdg-autostart/sentinel-polkit-agent.desktop \
         "$pkgdir/etc/xdg/autostart/sentinel-polkit-agent.desktop"

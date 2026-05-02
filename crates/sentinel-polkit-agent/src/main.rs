@@ -1,16 +1,16 @@
 mod agent;
+mod approval_queue;
 mod authority;
 mod helper1;
 mod helper_ui;
 mod identity;
 mod session;
+mod socket_server;
 mod subject;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use log::{info, warn};
-use sentinel_token::Issuer;
-use std::sync::Arc;
 use syslog::{BasicLogger, Facility, Formatter3164};
 use zbus::Connection;
 
@@ -19,7 +19,8 @@ const AGENT_OBJECT_PATH: &str = "/com/github/sentinel/PolkitAgent";
 #[derive(Parser, Debug)]
 #[command(version, about = "Sentinel polkit authentication agent")]
 struct Args {
-    /// Override the systemd login session id (defaults to $XDG_SESSION_ID).
+    /// Override the systemd login session id (defaults to $XDG_SESSION_ID
+    /// or /proc/self/sessionid).
     #[arg(long)]
     session_id: Option<String>,
 
@@ -49,8 +50,6 @@ fn main() -> Result<()> {
     let args = Args::parse();
     init_logger(args.debug);
 
-    // Run on a current-thread tokio runtime; zbus is happy single-threaded
-    // and we save a wakeup thread for what's a low-traffic agent.
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -60,17 +59,23 @@ fn main() -> Result<()> {
 
 async fn run(args: Args) -> Result<()> {
     let uid = nix::unistd::getuid().as_raw();
-    let issuer = Arc::new(
-        Issuer::generate_and_persist(uid).context("write sentinel-agent.secret")?,
-    );
-    info!("generated session secret for uid {uid}");
+    let queue = approval_queue::ApprovalQueue::new();
+
+    // Bring up the bypass socket *before* anything else so a polkit
+    // auth that races us has somewhere to ask.
+    let socket_queue = queue.clone();
+    let socket_task = tokio::spawn(async move {
+        if let Err(e) = socket_server::serve(uid, socket_queue).await {
+            warn!("agent socket server exited: {e:#}");
+        }
+    });
 
     let conn = Connection::system().await.context("connect system bus")?;
 
     let subject = subject::current(args.session_id.as_deref())
         .context("build unix-session subject")?;
 
-    let agent = agent::Agent::new(issuer.clone(), uid);
+    let agent = agent::Agent::new(uid, queue);
     conn.object_server()
         .at(AGENT_OBJECT_PATH, agent)
         .await
@@ -86,7 +91,6 @@ async fn run(args: Args) -> Result<()> {
         .context("Authority.RegisterAuthenticationAgent")?;
     info!("registered as polkit auth agent (object path {AGENT_OBJECT_PATH})");
 
-    // Wait for shutdown signal.
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .context("install SIGTERM handler")?;
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
@@ -103,14 +107,8 @@ async fn run(args: Args) -> Result<()> {
         warn!("UnregisterAuthenticationAgent failed: {e}");
     }
 
-    // Best-effort: remove the secret on graceful shutdown so a stale file
-    // can't be leveraged after a crash-restart cycle.
-    let path = sentinel_token::secret_path_for_uid(uid);
-    if let Err(e) = std::fs::remove_file(&path) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            warn!("could not remove {}: {e}", path.display());
-        }
-    }
+    socket_task.abort();
+    socket_server::unlink_socket(uid);
 
     info!("shutdown complete");
     Ok(())

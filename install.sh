@@ -176,11 +176,19 @@ printf 'VERSION\t0.3.0\t\n' >> "$STATE_TMP"
 step "Installing system files…"
 install_file 755 target/release/sentinel-helper       "$PREFIX/$LIBEXECDIR/sentinel-helper"
 install_file 755 target/release/sentinel-polkit-agent "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
-install_file 644 target/release/libpam_sentinel.so    "$PREFIX/lib/security/pam_sentinel.so"
+# pam_sentinel.so MUST be mode 0755 — under polkit-agent-helper@.service's
+# sandbox (NoNewPrivileges + various Protect*), libpam refuses to dlopen
+# .so files without the execute bit.
+install_file 755 target/release/libpam_sentinel.so    "$PREFIX/lib/security/pam_sentinel.so"
 install_file 644 config/sentinel.conf                 "$SYSCONFDIR/security/sentinel.conf"
 install_file 644 config/polkit-1                      "$SYSCONFDIR/pam.d/polkit-1"
 install_file 644 packaging/systemd/sentinel-polkit-agent.service \
     "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"
+# Drop-in to disable ProtectHome=yes on the system polkit-agent-helper@
+# unit. /run/user/<uid> would otherwise be masked inside its sandbox,
+# so pam_sentinel.so couldn't reach the bypass socket.
+install_file 644 packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf \
+    "$SYSCONFDIR/systemd/system/polkit-agent-helper@.service.d/sentinel.conf"
 
 # XDG autostart is the canonical deployment for polkit auth agents (see
 # polkit-gnome, polkit-kde). Compositors fork autostart entries as direct
@@ -216,10 +224,11 @@ verify() {
 }
 verify "$PREFIX/$LIBEXECDIR/sentinel-helper"            755 exe
 verify "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"      755 exe
-verify "$PREFIX/lib/security/pam_sentinel.so"           644 regular
+verify "$PREFIX/lib/security/pam_sentinel.so"           755 regular
 verify "$SYSCONFDIR/security/sentinel.conf"             644 regular
 verify "$SYSCONFDIR/pam.d/polkit-1"                     644 regular
 verify "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"  644 regular
+verify "$SYSCONFDIR/systemd/system/polkit-agent-helper@.service.d/sentinel.conf" 644 regular
 [[ $ENABLE_AGENT -eq 1 ]] && verify "$SYSCONFDIR/xdg/autostart/sentinel-polkit-agent.desktop" 644 regular
 [[ $INSTALL_SUDO -eq 1 ]] && verify "$SYSCONFDIR/pam.d/sudo"     644 regular
 

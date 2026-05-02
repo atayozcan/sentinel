@@ -42,13 +42,17 @@ depends = "libc6, libpam0g, libwayland-client0, libxkbcommon0, libfontconfig1, l
 assets = [
     ["../../target/release/sentinel-helper",       "usr/lib/sentinel-helper",                 "755"],
     ["../../target/release/sentinel-polkit-agent", "usr/lib/sentinel-polkit-agent",           "755"],
-    ["../../target/release/libpam_sentinel.so",    "usr/lib/security/pam_sentinel.so",        "644"],
+    # pam_sentinel.so requires the execute bit (0755) — under
+    # systemd-sandboxed PAM stacks (polkit-agent-helper@.service),
+    # libpam refuses to dlopen .so files without it.
+    ["../../target/release/libpam_sentinel.so",    "usr/lib/security/pam_sentinel.so",        "755"],
     ["../../config/sentinel.conf",                 "etc/security/sentinel.conf",              "644"],
     ["../../config/polkit-1",                      "etc/pam.d/polkit-1",                      "644"],
     # config/sudo is shipped under /usr/share/doc/ — users copy it
     # into /etc/pam.d/sudo manually. See PAM-Wiring wiki page.
     ["../../config/sudo",                          "usr/share/doc/sentinel/sudo",             "644"],
     ["../../packaging/systemd/sentinel-polkit-agent.service", "usr/lib/systemd/user/sentinel-polkit-agent.service", "644"],
+    ["../../packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf", "etc/systemd/system/polkit-agent-helper@.service.d/sentinel.conf", "644"],
     ["../../packaging/xdg-autostart/sentinel-polkit-agent.desktop", "etc/xdg/autostart/sentinel-polkit-agent.desktop", "644"],
     ["../../README.md",                            "usr/share/doc/sentinel/README.md",        "644"],
 ]
@@ -68,11 +72,12 @@ requires = { pam = "*", "libxkbcommon" = "*", fontconfig = "*", freetype = "*", 
 assets = [
     { source = "target/release/sentinel-helper",     dest = "/usr/lib/sentinel-helper",          mode = "755" },
     { source = "target/release/sentinel-polkit-agent", dest = "/usr/lib/sentinel-polkit-agent",  mode = "755" },
-    { source = "target/release/libpam_sentinel.so",  dest = "/usr/lib/security/pam_sentinel.so", mode = "644" },
+    { source = "target/release/libpam_sentinel.so",  dest = "/usr/lib/security/pam_sentinel.so", mode = "755" },
     { source = "config/sentinel.conf",               dest = "/etc/security/sentinel.conf",       mode = "644", config = true },
     { source = "config/polkit-1",                    dest = "/etc/pam.d/polkit-1",               mode = "644", config = true },
     { source = "config/sudo",                        dest = "/usr/share/doc/sentinel/sudo",      mode = "644", doc = true },
     { source = "packaging/systemd/sentinel-polkit-agent.service", dest = "/usr/lib/systemd/user/sentinel-polkit-agent.service", mode = "644" },
+    { source = "packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf", dest = "/etc/systemd/system/polkit-agent-helper@.service.d/sentinel.conf", mode = "644" },
     { source = "packaging/xdg-autostart/sentinel-polkit-agent.desktop", dest = "/etc/xdg/autostart/sentinel-polkit-agent.desktop", mode = "644" },
     { source = "README.md",                          dest = "/usr/share/doc/sentinel/README.md", mode = "644", doc = true },
     { source = "LICENSE",                            dest = "/usr/share/licenses/sentinel/LICENSE", mode = "644", doc = true },

@@ -26,10 +26,10 @@ impl PamHooks for PamSentinel {
         init_logger();
 
         // Recursion-prevention: when invoked from polkit-agent-helper-1
-        // under the Sentinel polkit agent, the agent's HMAC bypass token
-        // is in the environment. If it verifies, return PAM_SUCCESS
-        // immediately and don't spawn another dialog.
-        if let Some(rc) = agent_bypass::check_agent_bypass() {
+        // under the Sentinel polkit agent, ask the agent's local socket
+        // whether this auth was already approved. If so return
+        // PAM_SUCCESS without spawning the dialog.
+        if let Some(rc) = agent_bypass::check_agent_bypass(pamh) {
             return rc;
         }
 

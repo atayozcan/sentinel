@@ -1,12 +1,13 @@
 //! One in-flight authentication: drive `sentinel-helper` for the user
-//! decision, then `polkit-agent-helper-1` to satisfy polkit if Allow.
+//! decision, then satisfy polkit's cookie validation by enqueueing an
+//! approval (consumed by `pam_sentinel.so` via the agent's Unix
+//! socket) and connecting to `/run/polkit/agent-helper.socket`.
 
+use crate::approval_queue::ApprovalQueue;
 use crate::helper1;
 use crate::helper_ui::{self, Outcome};
 use anyhow::{Context, Result};
 use log::{info, warn};
-use sentinel_token::Issuer;
-use std::sync::Arc;
 
 pub struct AuthInputs<'a> {
     pub action_id: &'a str,
@@ -15,7 +16,7 @@ pub struct AuthInputs<'a> {
     pub username: &'a str,
 }
 
-pub async fn run(issuer: Arc<Issuer>, inputs: AuthInputs<'_>) -> Result<bool> {
+pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
     let req = helper_ui::Request::for_action(inputs.action_id, inputs.message);
     let outcome = helper_ui::run(req)
         .await
@@ -32,12 +33,15 @@ pub async fn run(issuer: Arc<Issuer>, inputs: AuthInputs<'_>) -> Result<bool> {
         Outcome::Allow => {}
     }
 
-    let token = issuer.token(inputs.cookie, inputs.action_id);
+    // Pre-approve before handing off to helper-1. helper-1 → PAM →
+    // pam_sentinel.so will dequeue this from our socket within a few
+    // milliseconds.
+    queue.push(inputs.action_id.to_string()).await;
+    info!("queued approval for action {}", inputs.action_id);
+
     let success = helper1::run(helper1::Run {
         username: inputs.username,
         cookie: inputs.cookie,
-        auth_token_b64: &token,
-        action_id: inputs.action_id,
     })
     .await
     .context("run polkit-agent-helper-1")?;
@@ -45,7 +49,7 @@ pub async fn run(issuer: Arc<Issuer>, inputs: AuthInputs<'_>) -> Result<bool> {
     if !success {
         warn!(
             "polkit-agent-helper-1 reported FAILURE for action {} \
-             (bypass token mismatch? PAM stack misconfigured?)",
+             (PAM stack didn't accept our approval?)",
             inputs.action_id
         );
     }
