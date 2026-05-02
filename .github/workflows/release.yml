@@ -5,6 +5,14 @@ on:
     tags:
       - 'v*'
 
+# Don't cancel an in-flight release if a second tag is pushed before
+# the first finishes — unlike CI on PRs, partial releases are bad
+# (half-uploaded artifacts, draft GH release with missing assets).
+# Queue the second one instead.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 

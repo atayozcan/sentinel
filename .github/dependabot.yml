@@ -1,0 +1,59 @@
+# Dependabot configuration.
+#
+# Keeps both the cargo workspace and the GitHub Actions versions
+# fresh without manual sweeps. Patch + minor bumps are grouped into
+# one weekly PR per ecosystem; major bumps each get their own PR
+# because they often need code changes (we manually bumped
+# clap_mangen 0.2 → 0.3 this way).
+#
+# Pinned-by-rev deps (libcosmic) are NOT auto-bumped — Dependabot
+# doesn't track git rev= sources. Bump those manually after
+# smoke-testing, per the procedure documented on the libcosmic
+# dependency line in crates/sentinel-helper/Cargo.toml.
+
+version: 2
+updates:
+  # ---------------------------------------------------------------------------
+  # Rust crates from crates.io
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+      - rust
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor
+        # Don't group security updates — those should be visible PRs.
+        exclude-patterns:
+          - "*security*"
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions referenced in .github/workflows/*.yml
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(actions)"
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      patch-and-minor:
+        update-types:
+          - patch
+          - minor

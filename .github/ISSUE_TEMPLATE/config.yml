@@ -1,0 +1,11 @@
+# Disable plain "open a blank issue" so reporters always start from
+# one of the structured forms above.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/atayozcan/sentinel/security/advisories/new
+    about: Use GitHub Private Vulnerability Reporting — see SECURITY.md.
+  - name: General question / discussion
+    url: https://github.com/atayozcan/sentinel/discussions
+    about: Open a discussion thread instead of an issue.

@@ -89,13 +89,17 @@ jobs:
         run: cargo test --workspace --locked
 
   # ---------------------------------------------------------------------------
-  # Smoke build of the full workspace. Catches build-system regressions
-  # (build.rs env vars, feature flag combinations) that pure `cargo
-  # check` wouldn't.
+  # Smoke build of the full workspace on both x86_64 and aarch64. The
+  # PKGBUILDs claim aarch64 support; this proves it. Free arm64 runners
+  # for public repos use ubuntu-24.04-arm.
   # ---------------------------------------------------------------------------
   build:
-    name: cargo build (release)
-    runs-on: ubuntu-latest
+    name: cargo build (release, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@v6
 
@@ -118,3 +122,36 @@ jobs:
 
       - name: cargo build --release
         run: cargo build --release --workspace --locked
+
+  # ---------------------------------------------------------------------------
+  # Security audit of the dependency tree against the RustSec advisory
+  # database. Sentinel sits in the PAM auth path — a known CVE in any
+  # transitive dep is something we want failing CI loudly, not waiting
+  # for someone to notice.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+
+      - name: cargo audit
+        # Ignored advisories (each must have a why-comment):
+        #
+        # RUSTSEC-2024-0436 — `paste 1.0.15` is unmaintained.
+        #   Pulled in transitively via libcosmic → iced_wgpu → wgpu →
+        #   wgpu-hal → metal (the Apple Metal backend). Sentinel is
+        #   Linux-only and never executes the metal code path; wgpu
+        #   ships all backends in Cargo.lock regardless of target.
+        #   Drop this when libcosmic ships a wgpu version whose
+        #   transitive deps no longer include `paste`.
+        run: cargo audit --deny warnings --ignore RUSTSEC-2024-0436

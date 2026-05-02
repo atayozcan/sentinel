@@ -1,0 +1,101 @@
+name: Bug report
+description: Sentinel did something wrong — dialog misbehavior, install/uninstall failure, agent crash, etc. (NOT a security vulnerability — see SECURITY.md.)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing an issue. The form below gathers what's
+        almost always needed to reproduce a Sentinel bug; please
+        fill in the relevant sections.
+
+        **If this is a security vulnerability, do NOT use this form.**
+        See [SECURITY.md](https://github.com/atayozcan/sentinel/blob/main/.github/SECURITY.md)
+        for the private reporting channel.
+
+  - type: input
+    id: version
+    attributes:
+      label: Sentinel version
+      description: Output of `sentinel-helper --version` (or your distro package version)
+      placeholder: e.g. 0.5.0
+    validations:
+      required: true
+
+  - type: input
+    id: installed_via
+    attributes:
+      label: Installed via
+      description: AUR (sentinel / sentinel-git), Debian, RPM, Nix, source tarball, `pkexec ./install.sh`, …
+      placeholder: e.g. AUR sentinel-git
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: Distro + kernel
+      description: Output of `cat /etc/os-release | grep PRETTY_NAME` and `uname -r`
+      placeholder: e.g. Arch Linux, kernel 6.18.4-arch1-1
+    validations:
+      required: true
+
+  - type: input
+    id: compositor
+    attributes:
+      label: Compositor / desktop
+      description: Output of `echo "$XDG_CURRENT_DESKTOP $XDG_SESSION_TYPE"`
+      placeholder: e.g. COSMIC wayland
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: If the dialog is involved, mention which buttons appeared and what you clicked.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps that trigger the issue.
+      placeholder: |
+        1. `pkexec true`
+        2. Click Allow
+        3. ...
+      render: shell
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: |
+        Paste output of:
+        ```
+        journalctl -t sentinel-polkit-agent -t pam_sentinel --since "5 minutes ago" --no-pager
+        ```
+        Lines like `event=auth.* …` are the most useful. Redact usernames/paths if you want.
+      render: shell
+
+  - type: textarea
+    id: config
+    attributes:
+      label: /etc/security/sentinel.conf
+      description: Only if you've customized it. Otherwise leave blank.
+      render: toml
+
+  - type: textarea
+    id: extras
+    attributes:
+      label: Anything else?
+      description: Screenshots, theories, related issues, etc.
