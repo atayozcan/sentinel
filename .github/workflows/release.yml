@@ -20,7 +20,7 @@ jobs:
             deb-arch: amd64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install build deps
         run: |
@@ -68,7 +68,7 @@ jobs:
           cargo generate-rpm -p crates/sentinel-helper --output dist/
 
       - name: Upload artefacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sentinel-${{ steps.ver.outputs.version }}-${{ matrix.arch }}
           path: dist/
@@ -77,10 +77,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download artefacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artefacts
 
