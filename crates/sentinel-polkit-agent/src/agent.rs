@@ -85,8 +85,31 @@ impl Agent {
             .get("polkit.subject-pid")
             .or_else(|| details.get("polkit.caller-pid"))
             .and_then(|s| s.parse::<i32>().ok());
-        let process_exe = subject_pid.and_then(sentinel_shared::procfs::read_exe);
-        let process_cmdline = subject_pid.and_then(sentinel_shared::procfs::read_cmdline);
+
+        // Prefer the action's intent over the subject's identity when
+        // polkit gives it to us. `org.freedesktop.policykit.exec`
+        // (i.e. `pkexec`) ships the program-to-be-elevated and the
+        // full argv as `details["program"]` and
+        // `details["command_line"]`. Without this preference, every
+        // `pkexec foo` displayed as "bash" or "sudo-rs" in the
+        // dialog and audit logs — true but useless. The user wants
+        // to see what's about to run, not who's asking.
+        //
+        // For non-pkexec actions (NetworkManager.modify-system,
+        // systemd1.manage-units, etc.) these keys aren't set, and we
+        // fall back to the subject-pid /proc lookup.
+        let elevated_program = details
+            .get("program")
+            .filter(|s| !s.is_empty())
+            .cloned();
+        let elevated_command_line = details
+            .get("command_line")
+            .filter(|s| !s.is_empty())
+            .cloned();
+        let process_exe =
+            elevated_program.or_else(|| subject_pid.and_then(sentinel_shared::procfs::read_exe));
+        let process_cmdline = elevated_command_line
+            .or_else(|| subject_pid.and_then(sentinel_shared::procfs::read_cmdline));
         let process_cwd = subject_pid.and_then(sentinel_shared::procfs::read_cwd);
         let username_for_task = username.clone();
 

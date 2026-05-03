@@ -47,13 +47,28 @@ for bin in sentinel-helper sentinel-polkit-agent; do
 done
 
 # ---------------------------------------------------------------------------
-# Source tarball.
+# Source tarball — generated only on the primary arch.
+#
+# `git archive HEAD` is bit-for-bit identical regardless of which
+# build runner produces it. In a multi-arch matrix (release.yml),
+# every arch generating the same `sentinel-$VERSION.tar.gz` ends up
+# colliding at the flatten step. Skipping it on non-primary arches
+# means each artefact has a unique name and `mv` to a single dist/
+# directory just works — no dedup logic needed.
 # ---------------------------------------------------------------------------
-echo "==> Source tarball → $SRC_TAR"
-git archive --format=tar.gz \
-    --prefix="sentinel-$VERSION/" \
-    -o "$SRC_TAR" \
-    HEAD
+SKIP_SOURCE_TARBALL=0
+if [[ "$ARCH" != "x86_64" ]]; then
+    SKIP_SOURCE_TARBALL=1
+fi
+if [[ $SKIP_SOURCE_TARBALL -eq 0 ]]; then
+    echo "==> Source tarball → $SRC_TAR"
+    git archive --format=tar.gz \
+        --prefix="sentinel-$VERSION/" \
+        -o "$SRC_TAR" \
+        HEAD
+else
+    echo "==> Source tarball: skipped on $ARCH (generated only on x86_64)"
+fi
 
 # ---------------------------------------------------------------------------
 # Binary tarball mirroring the install layout.
@@ -93,19 +108,14 @@ install -Dm644 packaging/man/pam_sentinel.8         "$ROOT/usr/share/man/man8/pa
 tar -C "$STAGE" -czf "$BIN_TAR" "sentinel-$VERSION"
 
 # ---------------------------------------------------------------------------
-# Checksums. Two files:
-#   - sentinel-$VERSION.sha256                 — source-tarball hash; same
-#                                                content across arches, so
-#                                                the release.yml flatten
-#                                                step uses `mv -n` to silently
-#                                                dedup duplicates.
-#   - sentinel-$VERSION-$ARCH-linux.sha256     — binary-tarball hash;
-#                                                arch-specific, no collision.
+# Checksums. Per-arch sha256 file for the binary tarball; the source
+# tarball gets its own sha256 only on the arch that produced it.
 # ---------------------------------------------------------------------------
 echo "==> Checksums"
-( cd "$DIST" \
-    && sha256sum "$(basename "$SRC_TAR")" > "sentinel-$VERSION.sha256" \
-    && sha256sum "$(basename "$BIN_TAR")" > "sentinel-$VERSION-$ARCH-linux.sha256" )
+( cd "$DIST" && sha256sum "$(basename "$BIN_TAR")" > "sentinel-$VERSION-$ARCH-linux.sha256" )
+if [[ $SKIP_SOURCE_TARBALL -eq 0 ]]; then
+    ( cd "$DIST" && sha256sum "$(basename "$SRC_TAR")" > "sentinel-$VERSION.sha256" )
+fi
 
 ls -lh "$DIST"
 echo
