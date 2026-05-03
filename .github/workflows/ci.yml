@@ -21,6 +21,14 @@ env:
   SENTINEL_SYSCONFDIR: /etc
   SENTINEL_LIBEXECDIR: lib
 
+# Least-privilege default for every job in this workflow. Individual
+# jobs that need more (e.g. uploading SARIF, writing artefacts beyond
+# the runner's scratch) override this with their own `permissions:`
+# block. Scorecard's `actions/missing-workflow-permissions` rule
+# expects this at the workflow level.
+permissions:
+  contents: read
+
 jobs:
   # ---------------------------------------------------------------------------
   # Format + clippy. Cheap, fail-fast — runs without --release so it picks

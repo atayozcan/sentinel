@@ -13,19 +13,25 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Default to read-only for the workflow; jobs that need to create
+# releases / push attestations / publish to AUR override below with
+# explicit narrow scopes. Scorecard's TokenPermissionsID rule is
+# unhappy when broad write perms are at the top level.
 permissions:
-  contents: write
-  # Required for `actions/attest-build-provenance@v3`. Each attestation
-  # is a Sigstore-signed bundle binding the artefact's sha256 to the
-  # GitHub Actions OIDC identity (workflow + repo + commit). Verifiable
-  # downstream with `gh attestation verify <file> --repo atayozcan/sentinel`.
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   build:
     name: build (${{ matrix.target }})
     runs-on: ${{ matrix.runs-on }}
+    permissions:
+      # Sigstore attestation upload binds the artifact's sha256 to
+      # the workflow's OIDC identity (the binding stays on the repo's
+      # /attestations endpoint, not here). Verify downstream with
+      # `gh attestation verify <file> --repo atayozcan/sentinel`.
+      id-token: write
+      attestations: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -110,6 +116,10 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      # gh release create needs write on contents to create the
+      # release object and upload assets.
+      contents: write
     steps:
       - uses: actions/checkout@v6
 
@@ -185,6 +195,10 @@ jobs:
   publish-aur:
     needs: release
     runs-on: ubuntu-latest
+    # Only needs to read the repo + the AUR_SSH_PRIVATE_KEY secret;
+    # no write access to anything on github.com.
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
