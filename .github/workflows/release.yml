@@ -181,7 +181,7 @@ jobs:
       # silently push to AUR with our key. Bump deliberately. Latest
       # versions: https://github.com/KSXGitHub/github-actions-deploy-aur/releases
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: ${{ matrix.pkgname }}
           pkgbuild: aur-stage/PKGBUILD
