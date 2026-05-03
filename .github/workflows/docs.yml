@@ -45,6 +45,11 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          # First-run convenience: if the repo doesn't have Pages
+          # enabled yet, the action provisions it (source = "GitHub
+          # Actions"). On subsequent runs it's a no-op.
+          enablement: true
 
       - name: Upload artefact
         uses: actions/upload-pages-artifact@v3
