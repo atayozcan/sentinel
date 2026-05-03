@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! `org.freedesktop.PolicyKit1.AuthenticationAgent` server side.
 
 use crate::approval_queue::ApprovalQueue;

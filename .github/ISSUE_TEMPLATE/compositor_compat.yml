@@ -1,0 +1,128 @@
+name: Compositor compatibility report
+description: Report whether Sentinel works on a Wayland compositor (or doesn't), so the README compatibility table stays accurate.
+title: "[compat] <COMPOSITOR>: <RESULT>"
+labels: ["compositor-compat", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Sentinel on your compositor! This template
+        feeds the [Compatibility table](https://github.com/atayozcan/sentinel#compatibility)
+        in the README. Both *worked* and *didn't work* reports are
+        useful — the table tracks both.
+
+        **Not a compatibility report?** Use the regular
+        [bug report](https://github.com/atayozcan/sentinel/issues/new?template=bug_report.yml)
+        or [feature request](https://github.com/atayozcan/sentinel/issues/new?template=feature_request.yml)
+        templates instead.
+
+  - type: dropdown
+    id: compositor
+    attributes:
+      label: Compositor
+      description: Which Wayland compositor did you test on?
+      options:
+        - cosmic-comp (COSMIC)
+        - Hyprland
+        - Sway
+        - Niri
+        - River
+        - Wayfire
+        - KWin (Plasma 6.x Wayland)
+        - GNOME / Mutter
+        - Pantheon
+        - Budgie
+        - Other (specify in description)
+    validations:
+      required: true
+
+  - type: input
+    id: compositor_version
+    attributes:
+      label: Compositor version
+      description: Output of e.g. `cosmic-comp --version`, `hyprctl version`, `sway --version`, `kwin_wayland --version`
+      placeholder: e.g. cosmic-comp 1.0.0-alpha.5
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      description: How did Sentinel behave?
+      options:
+        - "✓ Worked (layer-shell)"
+        - "✓ Worked (auto-fell back to --windowed)"
+        - "✓ Worked (forced --layer-shell or --windowed)"
+        - "✗ Failed — agent didn't autostart"
+        - "✗ Failed — dialog didn't appear"
+        - "✗ Failed — dialog appeared but didn't get keyboard focus"
+        - "✗ Failed — polkit registration race lost (cosmic-osd / etc.)"
+        - "✗ Failed — other (describe below)"
+    validations:
+      required: true
+
+  - type: input
+    id: sentinel_version
+    attributes:
+      label: Sentinel version
+      description: Output of `sentinel-helper --version` (or `pacman -Qi sentinel`, `dpkg -s sentinel`, etc.)
+      placeholder: e.g. 0.7.0
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: Distro + kernel
+      description: Output of `cat /etc/os-release | grep PRETTY_NAME` and `uname -r`.
+      placeholder: e.g. Arch Linux, kernel 6.18.4-arch1-1
+    validations:
+      required: true
+
+  - type: input
+    id: xdg_current_desktop
+    attributes:
+      label: XDG_CURRENT_DESKTOP / XDG_SESSION_TYPE
+      description: Output of `echo "$XDG_CURRENT_DESKTOP / $XDG_SESSION_TYPE"`. Sentinel uses `XDG_CURRENT_DESKTOP` to decide when to auto-fall-back to windowed mode; mismatches with the compositor name are common.
+      placeholder: e.g. COSMIC / wayland
+    validations:
+      required: true
+
+  - type: textarea
+    id: invocation
+    attributes:
+      label: How did you trigger the dialog?
+      description: e.g. `pkexec true`, `sudo apt update`, clicked the GParted launcher, ran `topgrade`, etc. Tells us which auth path you exercised.
+      placeholder: |
+        1. Opened a terminal under cosmic-comp
+        2. Ran `pkexec true`
+        3. Sentinel dialog appeared / didn't appear
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Behaviour notes / failure detail
+      description: Anything that's not "it just worked". Layer-shell namespace warnings, focus issues, dialog rendering glitches, kernel/drm errors, etc.
+      placeholder: |
+        Layer-shell rendered fine, exclusive keyboard worked, dialog
+        accepted Allow + Deny via mouse and keyboard. No issues.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant journal lines (optional)
+      description: |
+        Output of:
+        ```
+        journalctl -t sentinel-polkit-agent -t pam_sentinel \
+            --since "5 minutes ago" --no-pager
+        ```
+        Lines like `event=auth.* …` are most useful. Redact paths/usernames if you'd like.
+      render: shell
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot (optional)
+      description: Drag-and-drop a screenshot of the dialog if there's a visual issue, or just to vouch for "looks fine on this compositor".

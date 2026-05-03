@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! `pam_sentinel.so` — the PAM module half of Sentinel.
 //!
 //! Loaded by libpam on every authentication attempt for whatever

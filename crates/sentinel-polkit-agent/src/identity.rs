@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Pick which `unix-user` identity to authenticate as from polkit's list of
 //! eligible identities.
 

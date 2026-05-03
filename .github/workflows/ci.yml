@@ -181,6 +181,50 @@ jobs:
         run: cargo deny check
 
   # ---------------------------------------------------------------------------
+  # Agent integration test — drives `session::run` end-to-end through
+  # the Allow / Deny / Timeout paths plus cancel-drain, with the helper
+  # and polkit-agent-helper-1 short-circuited via env-var test seams.
+  # Catches state-machine regressions without needing D-Bus / polkit /
+  # a Wayland session in CI.
+  # ---------------------------------------------------------------------------
+  agent-integration:
+    name: agent integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpam0g-dev pkg-config
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo test (agent_flow)
+        run: cargo test -p sentinel-polkit-agent --test agent_flow --locked
+
+  # ---------------------------------------------------------------------------
+  # REUSE / SPDX compliance. Verifies every file is mapped (either via
+  # an inline `SPDX-License-Identifier` header or a `REUSE.toml` glob)
+  # to a known license. Together with the per-file headers added in
+  # v0.7.0, this catches license drift as contributors add files
+  # without the SPDX boilerplate.
+  # ---------------------------------------------------------------------------
+  reuse:
+    name: REUSE lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: REUSE compliance check
+        uses: fsfe/reuse-action@v6
+
+  # ---------------------------------------------------------------------------
   # Package smoke. Catches `cargo deb` / `cargo generate-rpm` metadata
   # typos at PR time rather than on tag-push (where they block a
   # release). Reuses the workspace build via cache, so this is fast.

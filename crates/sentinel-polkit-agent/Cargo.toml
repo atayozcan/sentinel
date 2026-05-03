@@ -8,6 +8,10 @@ authors.workspace = true
 rust-version.workspace = true
 description = "polkit authentication agent backed by the Sentinel confirmation dialog"
 
+[lib]
+name = "sentinel_polkit_agent"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sentinel-polkit-agent"
 path = "src/main.rs"

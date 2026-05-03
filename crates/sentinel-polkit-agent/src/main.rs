@@ -1,16 +1,9 @@
-mod agent;
-mod approval_queue;
-mod authority;
-mod helper1;
-mod helper_ui;
-mod identity;
-mod session;
-mod socket_server;
-mod subject;
-
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use log::{info, warn};
+use sentinel_polkit_agent::{agent, approval_queue, authority, socket_server, subject};
 use sentinel_shared::audit;
 use zbus::Connection;
 

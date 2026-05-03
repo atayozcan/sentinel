@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 use crate::cli::Args;
 use crate::i18n;
 use cosmic::iced::advanced::layout::Limits;

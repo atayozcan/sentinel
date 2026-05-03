@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Spawn `sentinel-helper` to render the confirmation dialog and parse its
 //! ALLOW / DENY / TIMEOUT verdict from stdout.
 //!
@@ -116,7 +118,20 @@ impl Request {
 }
 
 /// Spawn the helper, await its outcome.
+///
+/// Test seam: if `SENTINEL_TEST_HELPER_OUTCOME` is set to one of
+/// `ALLOW` / `DENY` / `TIMEOUT`, short-circuit the spawn and return
+/// the canned outcome. Used by `tests/agent_flow.rs` to drive the
+/// agent's state machine without a real Wayland session. Off by
+/// default in production (env var not set); harmless if a user sets
+/// it locally — the helper is replaced by a deterministic verdict.
 pub async fn run(req: Request) -> Result<Outcome, HelperError> {
+    if let Ok(canned) = std::env::var("SENTINEL_TEST_HELPER_OUTCOME") {
+        if let Ok(o) = canned.parse::<Outcome>() {
+            log::debug!("helper_ui::run: short-circuit via SENTINEL_TEST_HELPER_OUTCOME={canned}");
+            return Ok(o);
+        }
+    }
     let mut cmd = Command::new(HELPER_PATH);
     cmd.arg("--title")
         .arg(&req.title)

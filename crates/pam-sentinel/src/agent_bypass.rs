@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Bypass check: when `pam_sentinel.so` is loaded inside
 //! `polkit-agent-helper-1` (whether socket-activated by systemd or
 //! invoked directly by an agent), connect to

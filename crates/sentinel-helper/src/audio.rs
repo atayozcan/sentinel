@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! UAC-style audio cue when the dialog appears.
 //!
 //! Fires a freedesktop-named sound through `canberra-gtk-play`

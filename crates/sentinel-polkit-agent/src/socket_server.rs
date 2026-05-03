@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Unix-socket server `pam_sentinel.so` connects to to confirm a
 //! polkit auth has been pre-approved.
 //!

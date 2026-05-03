@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Client-side proxy for `org.freedesktop.PolicyKit1.Authority` — used to
 //! register/unregister this process as the session's authentication agent.
 

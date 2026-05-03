@@ -1,0 +1,67 @@
+name: scorecard
+
+# OpenSSF Scorecard — automated security-posture scoring across ~18
+# checks (branch protection, signed releases, dependency pinning,
+# SAST, code review, etc.). Runs weekly so the badge stays current
+# even without commits, plus on every push to main so a regression
+# surfaces immediately.
+#
+# Results are published to:
+#   - the project page on https://scorecard.dev/
+#   - the repo's GitHub Security tab (via SARIF upload)
+#   - the README badge
+#
+# https://github.com/ossf/scorecard for the full check list.
+
+on:
+  branch_protection_rule:
+  schedule:
+    # Mondays 06:00 UTC — same cadence as dependabot, keeps weekly
+    # security-sweep notifications clustered.
+    - cron: "0 6 * * 1"
+  push:
+    branches: [main]
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for the SARIF upload to the security tab.
+      security-events: write
+      # Required for the OIDC token used by the publish step.
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run scorecard
+        uses: ossf/scorecard-action@v2.4.2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publishing is what makes the badge resolve. No PAT needed
+          # — the scorecard action exchanges its OIDC token for a
+          # short-lived publish credential.
+          publish_results: true
+
+      # Upload as a workflow artifact (~30 days retention) for ad-hoc
+      # inspection — the SARIF file lists each check + score + findings.
+      - name: Upload SARIF artefact
+        uses: actions/upload-artifact@v7
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 5
+
+      # Land the same SARIF in the repo's Security tab so findings
+      # appear next to CodeQL alerts.
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

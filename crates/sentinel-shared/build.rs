@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Bake the absolute path of /etc/security/sentinel.conf at compile
 // time so both `pam-sentinel` (running inside privileged binaries
 // where env-based path resolution would be a security concern) and

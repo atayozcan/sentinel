@@ -8,6 +8,40 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-05-04
+
+Bigger release: dialog UX final piece + supply-chain integrity +
+docs site + repo polish.
+
+- **Dialog process names:** `sudo -v` (cred-cache, used by topgrade
+  / paru) now walks up to PPid and shows the user-facing originator
+  (paru, topgrade, your shell) instead of `sudo-rs`. Closes the
+  dialog-process-name fix series begun in v0.6.1.
+- **Sigstore artifact attestations:** every release artifact (deb,
+  rpm, tarball, both arches) is signed via
+  `actions/attest-build-provenance@v3`. Verify with
+  `gh attestation verify <file> --repo atayozcan/sentinel`.
+- **Threat model:** explicit section in SECURITY.md covering trust
+  boundaries (PAM + agent), what each refuses, why no
+  `systemd --user` unit, and the 2026 `polkit-agent-helper-1`
+  SUID-stripping context.
+- **Docs site:** wiki content migrated to `docs/` (mdBook),
+  deployed to <https://atayozcan.github.io/sentinel/> by
+  `.github/workflows/docs.yml`. PR-reviewable, versioned,
+  searchable.
+- **REUSE / SPDX compliance:** per-file headers across the repo +
+  `REUSE.toml` + `reuse-action` CI job. New badge.
+- **OpenSSF Scorecard:** weekly + push-triggered
+  `.github/workflows/scorecard.yml`. New badge.
+- **Compositor compatibility issue template:** structured
+  YAML form feeding the README compat table.
+- **Agent integration test:** `tests/agent_flow.rs` drives the
+  Allow / Deny / Timeout / cancel-drain paths end-to-end with mock
+  helper + mock helper-1 via env-var test seams. Agent crate now
+  exposes a `[lib]` target.
+
+[Full notes](https://github.com/atayozcan/sentinel/releases/tag/v0.7.0)
+
 ## [0.6.1] — 2026-05-04
 
 Patch: dialog process names + AUR publish.

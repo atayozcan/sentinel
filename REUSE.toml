@@ -1,0 +1,42 @@
+version = 1
+
+# REUSE configuration: maps every file in the repo to a license + copyright
+# without requiring per-file SPDX headers in places where they'd be noisy
+# (binary assets, generated lockfiles, the LICENSE document itself).
+#
+# Files NOT covered by an annotation here MUST carry an inline SPDX header.
+# `reuse lint` (run in CI) enforces both layers — see .github/workflows/ci.yml.
+#
+# Sentinel itself is GPL-3.0-or-later; everything we author falls under
+# that. Third-party assets (none currently) would get their own annotation
+# blocks.
+
+[[annotations]]
+path = ["LICENSE"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = ["Cargo.lock"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = [".gitignore", ".idea/**", ".vscode/**", ".claude/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = ["packaging/man/*.5", "packaging/man/*.8"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+[[annotations]]
+path = ["**/*.md", "**/*.toml", "**/*.yml", "**/*.yaml", "**/*.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
+SPDX-License-Identifier = "GPL-3.0-or-later"

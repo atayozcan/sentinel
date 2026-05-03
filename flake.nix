@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
 {
   description = "Sentinel — UAC-style PAM confirmation dialog for Linux";
 
@@ -32,7 +34,7 @@
 
         sentinel = pkgs.rustPlatform.buildRustPackage {
           pname = "sentinel";
-          version = "0.6.1";
+          version = "0.7.0";
           src = ./.;
 
           cargoLock = {

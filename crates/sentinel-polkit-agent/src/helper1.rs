@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Talk to systemd's socket-activated `polkit-agent-helper-1` to
 //! satisfy polkit's cookie validation.
 //!
@@ -43,6 +45,14 @@ pub struct Run<'a> {
 }
 
 pub async fn run(args: Run<'_>) -> Result<bool> {
+    // Test seam: short-circuit for `tests/agent_flow.rs`. We don't
+    // have a real polkit-agent-helper.socket in CI / unit tests; this
+    // env var lets the test harness assert the agent's pre-helper-1
+    // state-machine end-to-end without the polkit dependency.
+    if let Ok(canned) = std::env::var("SENTINEL_TEST_HELPER1_OUTCOME") {
+        log::debug!("helper1::run: short-circuit via SENTINEL_TEST_HELPER1_OUTCOME={canned}");
+        return Ok(canned == "SUCCESS");
+    }
     match tokio::time::timeout(HELPER1_TIMEOUT, run_inner(args)).await {
         Ok(res) => res,
         Err(_) => {

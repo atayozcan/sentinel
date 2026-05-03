@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 use clap::{Parser, Subcommand};
 
 /// How the helper paints its dialog. Resolved by [`Args::effective_render_mode`]

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
 # sentinel-helper UI chrome — 日本語.
 
 dialog-title-default     = 認証が必要です

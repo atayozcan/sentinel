@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Build release tarballs + generate shell completions and man pages
 # into ./dist/. Usage: ./scripts/build-release.sh [version]
 

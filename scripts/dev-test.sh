@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # scripts/dev-test.sh — build, install to system paths, run a tiny PAM auth
 # probe against a dedicated test service, then roll everything back.
 #

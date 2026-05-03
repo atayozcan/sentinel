@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Localization for the helper's own UI chrome.
 //!
 //! Bundles are **embedded** in the binary at compile time

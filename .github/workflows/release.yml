@@ -15,6 +15,12 @@ concurrency:
 
 permissions:
   contents: write
+  # Required for `actions/attest-build-provenance@v3`. Each attestation
+  # is a Sigstore-signed bundle binding the artefact's sha256 to the
+  # GitHub Actions OIDC identity (workflow + repo + commit). Verifiable
+  # downstream with `gh attestation verify <file> --repo atayozcan/sentinel`.
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -80,6 +86,20 @@ jobs:
           # cargo-generate-rpm reads paths relative to the workspace root
           cd "$GITHUB_WORKSPACE"
           cargo generate-rpm -p crates/sentinel-helper --output dist/
+
+      # Sigstore artifact attestations. Each .deb / .rpm / .tar.gz
+      # gets a signed bundle proving it was built by THIS workflow run
+      # at this commit. Stored on the repo's attestations endpoint;
+      # consumers verify with:
+      #   gh attestation verify <file> --repo atayozcan/sentinel
+      # Documented in SECURITY.md → Threat model → Supply-chain integrity.
+      - name: Attest release artefacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
 
       - name: Upload artefacts
         uses: actions/upload-artifact@v7

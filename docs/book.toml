@@ -1,0 +1,24 @@
+[book]
+title = "Sentinel"
+description = "UAC-style PAM + polkit confirmation dialog for Linux"
+authors = ["Atay Özcan"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/atayozcan/sentinel"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/atayozcan/sentinel/edit/main/docs/{path}"
+site-url = "/sentinel/"
+no-section-label = false
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true
+
+[output.html.fold]
+enable = true
+level = 1

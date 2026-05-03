@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Shared syslog initialization for the PAM module and the polkit agent.
 //!
 //! Both consumers ship the same `Formatter3164` boilerplate; this module

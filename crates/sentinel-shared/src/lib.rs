@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Shared configuration schema for the Sentinel PAM module
 //! (`pam-sentinel`) and the polkit authentication agent
 //! (`sentinel-polkit-agent`).
@@ -594,6 +596,24 @@ pub mod procfs {
         std::fs::read_to_string(format!("/proc/{pid}/comm"))
             .ok()
             .map(|s| s.trim().to_owned())
+    }
+
+    /// `/proc/<pid>/status` PPid line — parent process id. Used by the
+    /// PAM module to walk up from a sudo/su/pkexec wrapper that has
+    /// no explicit elevated command (e.g. `sudo -v` for credential
+    /// caching, common pattern in `topgrade` / `paru`) so the dialog
+    /// can show the user-facing originator instead of "sudo".
+    pub fn read_ppid(pid: i32) -> Option<i32> {
+        if pid <= 0 {
+            return None;
+        }
+        let s = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+        for line in s.lines() {
+            if let Some(rest) = line.strip_prefix("PPid:") {
+                return rest.trim().parse::<i32>().ok();
+            }
+        }
+        None
     }
 
     /// `/proc/<pid>/exe` — readlink of the absolute path to the

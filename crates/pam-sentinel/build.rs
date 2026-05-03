@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 // SENTINEL_CONFIG_PATH lives in `sentinel-shared`'s build.rs (shared
 // with the agent). This crate only needs the helper path baked in.
 

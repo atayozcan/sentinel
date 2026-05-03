@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! In-memory queue of pre-approved auths.
 //!
 //! On user-Allow click, the agent calls `push(action_id)`. When

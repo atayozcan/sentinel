@@ -1,6 +1,8 @@
 # Sentinel
 
 [![CI](https://github.com/atayozcan/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/atayozcan/sentinel/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/atayozcan/sentinel/badge)](https://scorecard.dev/viewer/?uri=github.com/atayozcan/sentinel)
+[![REUSE compliant](https://api.reuse.software/badge/github.com/atayozcan/sentinel)](https://api.reuse.software/info/github.com/atayozcan/sentinel)
 [![Latest release](https://img.shields.io/github/v/release/atayozcan/sentinel?include_prereleases&sort=semver)](https://github.com/atayozcan/sentinel/releases/latest)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-blue.svg)](rust-toolchain.toml)
@@ -24,15 +26,21 @@ Wayland-only.
 
 ## Documentation
 
-Full docs live on the **[wiki](https://github.com/atayozcan/sentinel/wiki)**:
+Full docs live at **<https://atayozcan.github.io/sentinel/>** (built
+from `docs/` via mdBook, deployed by `.github/workflows/docs.yml`):
 
-- [Installation](https://github.com/atayozcan/sentinel/wiki/Installation) — AUR, Debian, Fedora, NixOS, generic tarball, source
-- [Configuration](https://github.com/atayozcan/sentinel/wiki/Configuration) — `/etc/security/sentinel.conf` reference
-- [PAM Wiring](https://github.com/atayozcan/sentinel/wiki/PAM-Wiring) — `sudo`, `polkit`, `su`
-- [Building from Source](https://github.com/atayozcan/sentinel/wiki/Building-from-Source)
-- [Architecture](https://github.com/atayozcan/sentinel/wiki/Architecture) — design and security model
-- [Troubleshooting](https://github.com/atayozcan/sentinel/wiki/Troubleshooting) — recovery, common failures, debug logging
-- [Contributing](https://github.com/atayozcan/sentinel/wiki/Contributing)
+- [Installation](https://atayozcan.github.io/sentinel/installation.html) — AUR, Debian, Fedora, NixOS, generic tarball, source
+- [Configuration](https://atayozcan.github.io/sentinel/configuration.html) — `/etc/security/sentinel.conf` reference
+- [PAM wiring](https://atayozcan.github.io/sentinel/pam-wiring.html) — `sudo`, `polkit`, `su`
+- [Building from source](https://atayozcan.github.io/sentinel/building-from-source.html)
+- [Architecture](https://atayozcan.github.io/sentinel/architecture.html) — design and security model
+- [Troubleshooting](https://atayozcan.github.io/sentinel/troubleshooting.html) — recovery, common failures, debug logging
+- [Contributing](https://atayozcan.github.io/sentinel/contributing.html)
+- [Security policy](https://atayozcan.github.io/sentinel/security.html)
+
+The legacy [GitHub wiki](https://github.com/atayozcan/sentinel/wiki) is
+preserved as historical reference until v1.0; new content lives in
+`docs/` and is PR-reviewable.
 
 ## Quick install
 
@@ -41,12 +49,12 @@ Full docs live on the **[wiki](https://github.com/atayozcan/sentinel/wiki)**:
 yay -S sentinel
 
 # Debian / Ubuntu
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.6.1-1_amd64.deb
-sudo apt install ./sentinel_0.6.1-1_amd64.deb
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.7.0-1_amd64.deb
+sudo apt install ./sentinel_0.7.0-1_amd64.deb
 
 # Fedora / openSUSE
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.6.1-1.x86_64.rpm
-sudo dnf install ./sentinel-0.6.1-1.x86_64.rpm
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.7.0-1.x86_64.rpm
+sudo dnf install ./sentinel-0.7.0-1.x86_64.rpm
 
 # NixOS — flake at the repo root
 nix run github:atayozcan/sentinel -- --timeout 10 --randomize
