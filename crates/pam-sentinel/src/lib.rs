@@ -24,9 +24,9 @@ use helper::{HelperRequest, run as run_helper};
 use pam::constants::{PamFlag, PamResultCode};
 use pam::module::{PamHandle, PamHooks};
 use proc_info::ProcessInfo;
-use sentinel_config::log_kv::quote as q;
-use sentinel_config::logfmt_session_for_pid;
-use sentinel_config::{HeadlessAction, Outcome, ServiceConfig, format_message, load};
+use sentinel_shared::log_kv::quote as q;
+use sentinel_shared::logfmt_session_for_pid;
+use sentinel_shared::{HeadlessAction, Outcome, ServiceConfig, format_message, load};
 use std::ffi::CStr;
 use std::time::Instant;
 use syslog::{BasicLogger, Facility, Formatter3164};
@@ -172,33 +172,22 @@ fn spawn_dialog(
 
     if cfg.log_attempts {
         match &result {
-            Ok(Outcome::Allow) => log::info!(
-                "event=auth.allow source=dialog user={} service={} process={} uid={} latency_ms={}{}",
-                q(user),
-                q(service),
-                q(&process.name),
-                requesting_uid,
-                latency_ms,
-                session
-            ),
-            Ok(Outcome::Deny) => log::info!(
-                "event=auth.deny source=dialog user={} service={} process={} uid={} latency_ms={}{}",
-                q(user),
-                q(service),
-                q(&process.name),
-                requesting_uid,
-                latency_ms,
-                session
-            ),
-            Ok(Outcome::Timeout) => log::info!(
-                "event=auth.timeout source=dialog user={} service={} process={} uid={} latency_ms={}{}",
-                q(user),
-                q(service),
-                q(&process.name),
-                requesting_uid,
-                latency_ms,
-                session
-            ),
+            Ok(o) => {
+                let event = match o {
+                    Outcome::Allow => "auth.allow",
+                    Outcome::Deny => "auth.deny",
+                    Outcome::Timeout => "auth.timeout",
+                };
+                log::info!(
+                    "event={event} source=dialog user={} service={} process={} uid={} latency_ms={}{}",
+                    q(user),
+                    q(service),
+                    q(&process.name),
+                    requesting_uid,
+                    latency_ms,
+                    session
+                );
+            }
             Err(e) => log::warn!(
                 "event=auth.error source=dialog user={} service={} error={} latency_ms={}{}",
                 q(user),

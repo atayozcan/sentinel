@@ -21,7 +21,7 @@
 use crate::approval_queue::ApprovalQueue;
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
-use sentinel_config::{bypass_socket_path, procfs};
+use sentinel_shared::{bypass_socket_path, procfs};
 use std::os::unix::fs::PermissionsExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixListener;
@@ -86,7 +86,7 @@ async fn handle_one(mut stream: UnixStream, queue: ApprovalQueue) -> Result<()> 
         Some(approval) => {
             info!(
                 "event=auth.allow source=agent.bypass action={} peer_pid={peer_pid}",
-                sentinel_config::log_kv::quote(&approval.action_id)
+                sentinel_shared::log_kv::quote(&approval.action_id)
             );
             stream.write_all(b"OK\n").await.context("write OK")?;
         }

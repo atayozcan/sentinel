@@ -6,7 +6,7 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     ForkResult, Pid, User, dup2_stdout, execv, fork, initgroups, pipe, setgid, setuid,
 };
-use sentinel_config::{Outcome, ServiceConfig};
+use sentinel_shared::{Outcome, ServiceConfig};
 use std::ffi::CString;
 use std::os::fd::{AsFd, OwnedFd};
 

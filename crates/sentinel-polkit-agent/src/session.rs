@@ -8,9 +8,9 @@ use crate::helper_ui;
 use crate::helper1;
 use anyhow::{Context, Result};
 use log::{info, warn};
-use sentinel_config::log_kv::quote as q;
-use sentinel_config::logfmt_session_for_pid;
-use sentinel_config::{Outcome, ServiceConfig};
+use sentinel_shared::log_kv::quote as q;
+use sentinel_shared::logfmt_session_for_pid;
+use sentinel_shared::{Outcome, ServiceConfig};
 use std::time::Instant;
 
 pub struct AuthInputs<'a> {
@@ -45,7 +45,7 @@ pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
 
     let process_name = inputs
         .process_exe
-        .and_then(sentinel_config::process_basename)
+        .and_then(sentinel_shared::process_basename)
         .unwrap_or("unknown");
     // Session enrichment via the polkit subject's process env. The
     // subject is the user's actual process (the GUI app or shell

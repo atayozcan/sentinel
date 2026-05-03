@@ -54,7 +54,7 @@ pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
             return None;
         }
     };
-    let path = sentinel_config::bypass_socket_path(uid);
+    let path = sentinel_shared::bypass_socket_path(uid);
 
     let mut stream = match UnixStream::connect(&path) {
         Ok(s) => s,

@@ -1,4 +1,4 @@
-// SENTINEL_CONFIG_PATH lives in `sentinel-config`'s build.rs (shared
+// SENTINEL_CONFIG_PATH lives in `sentinel-shared`'s build.rs (shared
 // with the agent). This crate only needs the helper path baked in.
 
 fn main() {

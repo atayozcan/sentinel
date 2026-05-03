@@ -1,10 +1,10 @@
 //! Eagerly-populated snapshot of a process's `/proc/<pid>/*` data.
 //!
-//! Just a typed bundle around `sentinel_config::procfs::*` lookups
+//! Just a typed bundle around `sentinel_shared::procfs::*` lookups
 //! with the unknown / empty defaults the dialog renderer expects.
-//! New /proc readers go in `sentinel_config::procfs`, not here.
+//! New /proc readers go in `sentinel_shared::procfs`, not here.
 
-use sentinel_config::procfs;
+use sentinel_shared::procfs;
 
 pub struct ProcessInfo {
     pub name: String,

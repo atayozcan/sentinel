@@ -43,7 +43,7 @@ body:
         - pam_sentinel.so (PAM module)
         - sentinel-helper (dialog UI)
         - sentinel-polkit-agent
-        - sentinel-config / TOML schema
+        - sentinel-shared / TOML schema
         - install.sh / packaging
         - i18n / translations
         - Other

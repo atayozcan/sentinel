@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pam-bindings = "0.1"
-sentinel-config = { path = "../sentinel-config" }
+sentinel-shared = { path = "../sentinel-shared" }
 syslog.workspace = true
 log.workspace = true
 nix.workspace = true

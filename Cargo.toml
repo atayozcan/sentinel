@@ -2,13 +2,13 @@
 resolver = "2"
 members = [
     "crates/pam-sentinel",
-    "crates/sentinel-config",
+    "crates/sentinel-shared",
     "crates/sentinel-helper",
     "crates/sentinel-polkit-agent",
 ]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/atayozcan/sentinel"

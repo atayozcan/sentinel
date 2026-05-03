@@ -294,7 +294,7 @@ impl Document {
                 Ok(parsed) => parsed,
                 Err(e) => {
                     log::warn!(
-                        "sentinel-config: failed to parse {}: {e} — falling back to defaults",
+                        "sentinel-shared: failed to parse {}: {e} — falling back to defaults",
                         path.display()
                     );
                     Document::defaults()
@@ -302,14 +302,14 @@ impl Document {
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 log::debug!(
-                    "sentinel-config: {} not present — using defaults",
+                    "sentinel-shared: {} not present — using defaults",
                     path.display()
                 );
                 Document::defaults()
             }
             Err(e) => {
                 log::warn!(
-                    "sentinel-config: cannot read {}: {e} — using defaults",
+                    "sentinel-shared: cannot read {}: {e} — using defaults",
                     path.display()
                 );
                 Document::defaults()
@@ -833,7 +833,7 @@ mod tests {
     fn load_from_real_file_round_trips() {
         // Write a minimal config to a tempfile and load it back.
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("sentinel-config-test-{}.toml", std::process::id()));
+        let path = dir.join(format!("sentinel-shared-test-{}.toml", std::process::id()));
         std::fs::write(&path, "[general]\ntimeout = 12\n").unwrap();
         let doc = Document::load_from(&path);
         let _ = std::fs::remove_file(&path);

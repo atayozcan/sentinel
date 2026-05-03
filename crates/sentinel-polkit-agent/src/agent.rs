@@ -81,9 +81,9 @@ impl Agent {
             .get("polkit.subject-pid")
             .or_else(|| details.get("polkit.caller-pid"))
             .and_then(|s| s.parse::<i32>().ok());
-        let process_exe = subject_pid.and_then(sentinel_config::procfs::read_exe);
-        let process_cmdline = subject_pid.and_then(sentinel_config::procfs::read_cmdline);
-        let process_cwd = subject_pid.and_then(sentinel_config::procfs::read_cwd);
+        let process_exe = subject_pid.and_then(sentinel_shared::procfs::read_exe);
+        let process_cmdline = subject_pid.and_then(sentinel_shared::procfs::read_cmdline);
+        let process_cwd = subject_pid.and_then(sentinel_shared::procfs::read_cwd);
         let username_for_task = username.clone();
 
         // Re-read config per call so an admin's edit to
@@ -94,7 +94,7 @@ impl Agent {
         // polkitd so we can't disable ourselves mid-session, and a
         // refusal would leave polkit with no agent at all. Rendering
         // the dialog is the safer default.
-        let cfg = sentinel_config::load(POLKIT_PAM_SERVICE);
+        let cfg = sentinel_shared::load(POLKIT_PAM_SERVICE);
         if !cfg.enabled {
             warn!(
                 "[services.{POLKIT_PAM_SERVICE}].enabled = false in config — \

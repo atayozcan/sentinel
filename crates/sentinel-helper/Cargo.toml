@@ -26,7 +26,7 @@ rand = "0.10.1"
 fluent-bundle = "0.16"
 fluent-langneg = "0.14"
 unic-langid = "0.9"
-sentinel-config = { path = "../sentinel-config" }
+sentinel-shared = { path = "../sentinel-shared" }
 anyhow.workspace = true
 
 # ---------------------------------------------------------------------------

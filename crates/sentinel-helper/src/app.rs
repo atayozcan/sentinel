@@ -10,7 +10,7 @@ use cosmic::iced::time::{self, Duration, Instant};
 use cosmic::iced::{Background, Border, Color, Length, Shadow, Subscription, window};
 use cosmic::widget::{button, column, container, progress_bar, row, scrollable, text};
 use cosmic::{Action, Application, Element, Task, executor, theme};
-use sentinel_config::Outcome;
+use sentinel_shared::Outcome;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 
@@ -206,7 +206,7 @@ impl ConfirmApp {
         // either:
         //   - a custom value the admin set in /etc/security/sentinel.conf
         //     (passed through verbatim — admins write whatever language),
-        //   - or still equal to the built-in `sentinel-config` default,
+        //   - or still equal to the built-in `sentinel-shared` default,
         //     in which case we substitute the locale's translation so a
         //     fresh install actually feels localized.
         let title_text = self.localized_title();
@@ -375,10 +375,10 @@ impl ConfirmApp {
     }
 
     /// Title text. If the admin hasn't customized it (still equal to
-    /// `sentinel_config::DEFAULT_TITLE`), render the locale's
+    /// `sentinel_shared::DEFAULT_TITLE`), render the locale's
     /// `dialog-title-default`. Otherwise pass the admin's value through.
     fn localized_title(&self) -> String {
-        if self.args.title == sentinel_config::DEFAULT_TITLE {
+        if self.args.title == sentinel_shared::DEFAULT_TITLE {
             i18n::t("dialog-title-default")
         } else {
             self.args.title.clone()
@@ -397,8 +397,8 @@ impl ConfirmApp {
     /// get a comparable string.
     fn localized_message(&self) -> String {
         let proc_name = self.process_name_for_subst();
-        let default_substituted = sentinel_config::format_message(
-            sentinel_config::DEFAULT_MESSAGE,
+        let default_substituted = sentinel_shared::format_message(
+            sentinel_shared::DEFAULT_MESSAGE,
             self.args.requesting_user.as_deref().unwrap_or(""),
             self.args.action.as_deref().unwrap_or(""),
             &proc_name,
@@ -413,8 +413,8 @@ impl ConfirmApp {
     /// Same logic for the secondary line. The default has no tokens, so
     /// no substitution dance.
     fn localized_secondary(&self) -> String {
-        let secondary_substituted = sentinel_config::format_message(
-            sentinel_config::DEFAULT_SECONDARY,
+        let secondary_substituted = sentinel_shared::format_message(
+            sentinel_shared::DEFAULT_SECONDARY,
             self.args.requesting_user.as_deref().unwrap_or(""),
             self.args.action.as_deref().unwrap_or(""),
             &self.process_name_for_subst(),
@@ -430,7 +430,7 @@ impl ConfirmApp {
         self.args
             .process_exe
             .as_deref()
-            .and_then(sentinel_config::process_basename)
+            .and_then(sentinel_shared::process_basename)
             .unwrap_or("unknown")
             .to_string()
     }
@@ -456,7 +456,7 @@ fn detail_row<'a>(label: &str, value: &str) -> Element<'a, Message> {
 /// machinery, which uses a file-based cache. Done once at app init so
 /// repeated dialog renders don't walk the theme directory.
 fn resolve_process_icon(process_exe: Option<&str>) -> Option<cosmic::widget::icon::Named> {
-    let basename = process_exe.and_then(sentinel_config::process_basename)?;
+    let basename = process_exe.and_then(sentinel_shared::process_basename)?;
     let named = cosmic::widget::icon::from_name(basename.to_string())
         .size(48)
         // Disable Named's default name-truncation fallback (which would

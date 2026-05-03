@@ -3576,12 +3576,12 @@ dependencies = [
 
 [[package]]
 name = "pam-sentinel"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "log",
  "nix",
  "pam-bindings",
- "sentinel-config",
+ "sentinel-shared",
  "syslog",
 ]
 
@@ -4336,17 +4336,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
-name = "sentinel-config"
-version = "0.5.1"
-dependencies = [
- "log",
- "serde",
- "toml 1.1.2+spec-1.1.0",
-]
-
-[[package]]
 name = "sentinel-helper"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -4356,13 +4347,13 @@ dependencies = [
  "fluent-langneg 0.14.2",
  "libcosmic",
  "rand 0.10.1",
- "sentinel-config",
+ "sentinel-shared",
  "unic-langid",
 ]
 
 [[package]]
 name = "sentinel-polkit-agent"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -4370,13 +4361,22 @@ dependencies = [
  "clap_mangen",
  "log",
  "nix",
- "sentinel-config",
+ "sentinel-shared",
  "serde",
  "syslog",
  "thiserror 2.0.18",
  "tokio",
  "zbus",
  "zvariant",
+]
+
+[[package]]
+name = "sentinel-shared"
+version = "0.5.2"
+dependencies = [
+ "log",
+ "serde",
+ "toml 1.1.2+spec-1.1.0",
 ]
 
 [[package]]

@@ -38,38 +38,19 @@ use std::collections::HashMap;
 /// entry.
 pub const FORWARDED_VARS: &[&str] = &["LC_ALL", "LC_MESSAGES", "LANG"];
 
-/// Read NUL-separated `KEY=VALUE` pairs from `/proc/<pid>/environ`
-/// and return the subset of [`FORWARDED_VARS`] whose values pass
-/// [`is_safe_locale_value`].
+/// Return the subset of [`FORWARDED_VARS`] set in `/proc/<pid>/environ`
+/// whose values pass [`is_safe_locale_value`].
 ///
 /// Returns an empty map on any error (unreadable, missing, permission
 /// denied) — locale propagation is best-effort and must never block
 /// auth.
 pub fn read_locale_env(pid: i32) -> HashMap<&'static str, String> {
     let mut out = HashMap::new();
-    if pid <= 0 {
-        return out;
-    }
-    let bytes = match std::fs::read(format!("/proc/{pid}/environ")) {
-        Ok(b) => b,
-        Err(_) => return out,
-    };
-    for entry in bytes.split(|b| *b == 0) {
-        if entry.is_empty() {
-            continue;
-        }
-        let Ok(s) = std::str::from_utf8(entry) else {
-            continue;
-        };
-        let Some((key, value)) = s.split_once('=') else {
-            continue;
-        };
-        if let Some(canonical_key) = FORWARDED_VARS.iter().find(|k| **k == key) {
-            if is_safe_locale_value(value) {
-                // Last-write-wins if the entry appears multiple times,
-                // which mirrors what execve does.
-                out.insert(*canonical_key, value.to_string());
-            }
+    for var in FORWARDED_VARS {
+        if let Some(value) = sentinel_shared::procfs::read_environ_var(pid, var)
+            && is_safe_locale_value(&value)
+        {
+            out.insert(*var, value);
         }
     }
     out

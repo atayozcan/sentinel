@@ -2,7 +2,7 @@
 #
 # The dialog title/message/secondary are admin-provided through
 # /etc/security/sentinel.conf, but if they still equal the built-in
-# defaults (the strings registered in `sentinel-config` as
+# defaults (the strings registered in `sentinel-shared` as
 # `DEFAULT_TITLE`/`DEFAULT_MESSAGE`/`DEFAULT_SECONDARY`), the helper
 # substitutes the locale-specific version below. Customizing the
 # config opts out of this — admin's strings are passed through.

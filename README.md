@@ -36,12 +36,12 @@ Full docs live on the **[wiki](https://github.com/atayozcan/sentinel/wiki)**:
 yay -S sentinel
 
 # Debian / Ubuntu
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.5.1-1_amd64.deb
-sudo apt install ./sentinel_0.5.1-1_amd64.deb
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.5.2-1_amd64.deb
+sudo apt install ./sentinel_0.5.2-1_amd64.deb
 
 # Fedora / openSUSE
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.5.1-1.x86_64.rpm
-sudo dnf install ./sentinel-0.5.1-1.x86_64.rpm
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.5.2-1.x86_64.rpm
+sudo dnf install ./sentinel-0.5.2-1.x86_64.rpm
 
 # NixOS — flake at the repo root
 nix run github:atayozcan/sentinel -- --timeout 10 --randomize
@@ -92,7 +92,7 @@ table — bonus points for a screenshot.
 .
 ├── Cargo.toml                  # workspace root
 ├── crates/
-│   ├── sentinel-config/        # shared schema, parser, log_kv quoting
+│   ├── sentinel-shared/        # shared schema, parser, /proc + logind readers, log_kv
 │   ├── pam-sentinel/           # cdylib → /usr/lib/security/pam_sentinel.so
 │   ├── sentinel-helper/        # bin    → /usr/lib/sentinel-helper
 │   │   └── locales/            # 12 embedded fluent bundles (en-US, de-DE, …)
