@@ -87,6 +87,17 @@ license-files = []
 crate = "cosmic-settings-daemon"
 expression = "MPL-2.0"
 license-files = []
+# `dnd` and `mime` ship from pop-os/window_clipboard (workspace
+# license: MPL-2.0); per-crate manifests don't declare. Same shape
+# as cosmic-config et al.
+[[licenses.clarify]]
+crate = "dnd"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "mime"
+expression = "MPL-2.0"
+license-files = []
 # `apply` (crates.io) is a tiny utility crate that ships without a
 # license field. Per its README and crates.io page it's MIT.
 [[licenses.clarify]]
@@ -103,16 +114,20 @@ multiple-versions = "warn"
 wildcards = "warn"
 
 # ----------------------------------------------------------------------
-# Sources — only crates.io and the libcosmic git pin.
+# Sources — crates.io is the only registry; for git, libcosmic pulls a
+# moving set of pop-os repos (winit, cosmic-protocols, window_clipboard,
+# softbuffer, freedesktop-icons, smithay-clipboard, …) plus a couple of
+# iced-rs repos. Listing each one is brittle — every libcosmic bump
+# tends to add or move a source and we'd false-fail CI for a week.
+#
+# Use `warn` so unaccounted git sources surface in the CI log (we still
+# see what's being pulled) without gating the merge. The `allow-git`
+# entries below are informational; they document the sources we've
+# specifically reviewed.
 # ----------------------------------------------------------------------
 [sources]
 unknown-registry = "deny"
-unknown-git = "deny"
-# libcosmic transitively pulls several other pop-os git repos
-# (winit fork, cosmic-protocols, dbus-settings-bindings); allowlist
-# the whole pop-os GitHub org's relevant repos. We list both the
-# bare and `.git`-suffixed forms because Cargo normalizes the URL
-# differently depending on how it appears in the dep graph.
+unknown-git = "warn"
 allow-git = [
     "https://github.com/pop-os/libcosmic",
     "https://github.com/pop-os/libcosmic.git",
@@ -122,4 +137,11 @@ allow-git = [
     "https://github.com/pop-os/cosmic-protocols.git",
     "https://github.com/pop-os/dbus-settings-bindings",
     "https://github.com/pop-os/dbus-settings-bindings.git",
+    "https://github.com/pop-os/window_clipboard",
+    "https://github.com/pop-os/window_clipboard.git",
+    "https://github.com/pop-os/smithay-clipboard",
+    "https://github.com/pop-os/softbuffer",
+    "https://github.com/pop-os/freedesktop-icons",
+    "https://github.com/iced-rs/cryoglyph.git",
+    "https://github.com/jackpot51/rust-atomicwrites",
 ]
