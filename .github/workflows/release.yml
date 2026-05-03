@@ -107,3 +107,69 @@ jobs:
             --title "Sentinel v$v" \
             --notes-file .github/release-notes/v$v.md \
             dist/*
+
+  # ---------------------------------------------------------------------------
+  # AUR publish.
+  #
+  # Runs after `release` because the stable PKGBUILD's `source=` URL is
+  # GitHub's auto-generated tag tarball, which exists as soon as the tag
+  # is pushed — so technically we don't need `release` to finish. But
+  # gating on it ensures we only publish to AUR when the build + release
+  # actually succeeded, avoiding "tag exists, AUR updated, but release
+  # is broken" states.
+  #
+  # Secrets required (set under repo Settings → Secrets and variables →
+  # Actions):
+  #   AUR_SSH_PRIVATE_KEY  — private half of an ed25519 key whose public
+  #                          half is registered on the AUR account
+  #                          (https://aur.archlinux.org/account/sipsip,
+  #                          "SSH Public Key" field). Must be AUR-only;
+  #                          do NOT reuse your personal key.
+  #
+  # First-time bootstrap is still manual — the action pushes to an
+  # existing AUR repo, it doesn't create one. See packaging/arch/README.md
+  # for the one-time `git clone ssh://aur@aur.archlinux.org/<pkg>.git`
+  # step.
+  #
+  # We deliberately do NOT run a clean-chroot `makepkg -s` here:
+  # `release.yml`'s `build` job already did `cargo build --release
+  # --workspace --locked` with the same SENTINEL_* env vars the
+  # PKGBUILDs use, and a second build with libcosmic from git would
+  # add ~10 minutes per matrix entry for marginal value. The action's
+  # built-in `.SRCINFO` generation catches PKGBUILD syntax errors, and
+  # `updpkgsums` catches a wrong source URL. If you ever want a real
+  # chroot smoke-test, drop in `extra-x86_64-build` from
+  # `archlinux/devtools` before the deploy step.
+  publish-aur:
+    needs: release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkgname: sentinel
+            pkgbuild: packaging/arch/PKGBUILD
+          - pkgname: sentinel-git
+            pkgbuild: packaging/arch/PKGBUILD-git
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Stage PKGBUILD
+        run: |
+          mkdir -p aur-stage
+          cp "${{ matrix.pkgbuild }}" aur-stage/PKGBUILD
+
+      # Pin to a tagged release (not @master) so a hijacked action can't
+      # silently push to AUR with our key. Bump deliberately. Latest
+      # versions: https://github.com/KSXGitHub/github-actions-deploy-aur/releases
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: ${{ matrix.pkgname }}
+          pkgbuild: aur-stage/PKGBUILD
+          commit_username: sipsip
+          commit_email: atayozcan@pm.me
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Release ${{ github.ref_name }}"
+          updpkgsums: true
+          ssh_keyscan_types: rsa,ed25519
