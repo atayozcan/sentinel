@@ -93,10 +93,19 @@ install -Dm644 packaging/man/pam_sentinel.8         "$ROOT/usr/share/man/man8/pa
 tar -C "$STAGE" -czf "$BIN_TAR" "sentinel-$VERSION"
 
 # ---------------------------------------------------------------------------
-# Checksums.
+# Checksums. Two files:
+#   - sentinel-$VERSION.sha256                 — source-tarball hash; same
+#                                                content across arches, so
+#                                                the release.yml flatten
+#                                                step uses `mv -n` to silently
+#                                                dedup duplicates.
+#   - sentinel-$VERSION-$ARCH-linux.sha256     — binary-tarball hash;
+#                                                arch-specific, no collision.
 # ---------------------------------------------------------------------------
 echo "==> Checksums"
-( cd "$DIST" && sha256sum "$(basename "$SRC_TAR")" "$(basename "$BIN_TAR")" > "sentinel-$VERSION.sha256" )
+( cd "$DIST" \
+    && sha256sum "$(basename "$SRC_TAR")" > "sentinel-$VERSION.sha256" \
+    && sha256sum "$(basename "$BIN_TAR")" > "sentinel-$VERSION-$ARCH-linux.sha256" )
 
 ls -lh "$DIST"
 echo

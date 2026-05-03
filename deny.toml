@@ -41,6 +41,9 @@ ignore = [
 [licenses]
 allow = [
     "GPL-3.0-or-later",
+    # cosmic-protocols and its client-toolkit sub-crate ship as
+    # GPL-3.0-only. Compatible with our GPL-3.0-or-later linking.
+    "GPL-3.0-only",
     "GPL-3.0",
     "LGPL-3.0-or-later",
     "MIT",
@@ -62,6 +65,35 @@ allow = [
 ]
 confidence-threshold = 0.8
 
+# Crates whose Cargo.toml omits the `license` field — most often a
+# pop-os/libcosmic workspace member that inherits from the parent
+# workspace's MPL-2.0 license but doesn't declare it per-crate.
+# cargo-deny can't follow that inheritance, so we clarify each one
+# explicitly. The license expressions match the upstream repos'
+# top-level LICENSE files.
+[[licenses.clarify]]
+crate = "cosmic-config"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "cosmic-config-derive"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "cosmic-theme"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "cosmic-settings-daemon"
+expression = "MPL-2.0"
+license-files = []
+# `apply` (crates.io) is a tiny utility crate that ships without a
+# license field. Per its README and crates.io page it's MIT.
+[[licenses.clarify]]
+crate = "apply"
+expression = "MIT"
+license-files = []
+
 # ----------------------------------------------------------------------
 # Bans — currently no banned crates. Use this section to block a
 # specific dep (e.g. `openssl-sys` if we wanted to enforce rustls only).
@@ -76,7 +108,18 @@ wildcards = "warn"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# libcosmic transitively pulls several other pop-os git repos
+# (winit fork, cosmic-protocols, dbus-settings-bindings); allowlist
+# the whole pop-os GitHub org's relevant repos. We list both the
+# bare and `.git`-suffixed forms because Cargo normalizes the URL
+# differently depending on how it appears in the dep graph.
 allow-git = [
     "https://github.com/pop-os/libcosmic",
     "https://github.com/pop-os/libcosmic.git",
+    "https://github.com/pop-os/winit",
+    "https://github.com/pop-os/winit.git",
+    "https://github.com/pop-os/cosmic-protocols",
+    "https://github.com/pop-os/cosmic-protocols.git",
+    "https://github.com/pop-os/dbus-settings-bindings",
+    "https://github.com/pop-os/dbus-settings-bindings.git",
 ]

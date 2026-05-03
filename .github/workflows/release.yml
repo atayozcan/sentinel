@@ -113,7 +113,12 @@ jobs:
       - name: Flatten
         run: |
           mkdir -p dist
-          find artefacts -type f \( -name '*.tar.gz' -o -name '*.sha256' -o -name '*.deb' -o -name '*.rpm' \) -exec mv -t dist/ {} +
+          # `-n` (no-clobber): the source tarball + its sha256 are
+          # identical across arches and would collide here; first-wins
+          # silent-skip is the right semantics. Per-arch artefacts
+          # (binary tarball, deb, rpm, per-arch sha256) have unique
+          # names so they all land in dist/.
+          find artefacts -type f \( -name '*.tar.gz' -o -name '*.sha256' -o -name '*.deb' -o -name '*.rpm' \) -exec mv -n -t dist/ {} +
           ls -la dist
 
       - name: Create release
