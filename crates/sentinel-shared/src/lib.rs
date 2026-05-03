@@ -381,6 +381,92 @@ pub const DEFAULT_MESSAGE: &str = "The application \"%p\" is requesting elevated
 /// the helper renders it verbatim and skips the row when empty.
 pub const DEFAULT_SECONDARY: &str = "";
 
+/// Recognised elevation-tool basenames. When the requesting process's
+/// argv[0] matches one of these, we strip the elevation prefix from
+/// the cmdline so the dialog shows the user-facing target instead of
+/// the elevation tool itself.
+///
+/// Both pkexec (used by polkit-agent) and sudo / su / doas (used by
+/// the PAM module's sudo path) hide the user's actual command behind
+/// their own argv[0]. Without this stripping, every `sudo foo` shows
+/// "sudo-rs" or "sudo" in the dialog, useless for confirmation.
+pub const ELEVATION_TOOLS: &[&str] = &["pkexec", "sudo", "sudo-rs", "su", "doas"];
+
+/// Flags shared across elevation tools that take a single value as
+/// the next argv slot. `strip_elevation_prefix` skips both the flag
+/// and its value when it sees one of these.
+const ELEVATION_FLAGS_WITH_VALUE: &[&str] = &[
+    // pkexec
+    "--user",
+    "-u",
+    // sudo (--user/-u shared)
+    "--group",
+    "-g",
+    "--host",
+    "-h",
+    "--chdir",
+    "-D",
+    "--prompt",
+    "-p",
+    "--command-timeout",
+    "-T",
+    "--close-from",
+    "-C",
+    "--type",
+    "-t",
+    "--role",
+    "-r",
+    "--other-user",
+    "-U",
+];
+
+/// Strip an elevation tool's `argv[0]` and any of its option flags
+/// from a `/proc/<pid>/cmdline` reading, leaving the elevated
+/// command. Returns the joined remainder (whitespace-separated,
+/// matching what `procfs::read_cmdline` produces). Empty if nothing
+/// remains (e.g. `sudo -i` with no command).
+///
+/// `argv[0]` matching is by basename (so `/usr/bin/sudo-rs` and
+/// `sudo-rs` both qualify), against [`ELEVATION_TOOLS`].
+///
+/// Examples:
+///   "sudo true"                           → "true"
+///   "sudo-rs systemctl restart foo"       → "systemctl restart foo"
+///   "sudo -u root /bin/sh"                → "/bin/sh"
+///   "sudo -E -u root systemctl x"         → "systemctl x"
+///   "pkexec --user root /usr/bin/cat /e"  → "/usr/bin/cat /e"
+///   "ls -la"                              → "ls -la"   (not an elevation tool)
+///   "sudo -i"                             → ""         (no command)
+pub fn strip_elevation_prefix(cmdline: &str) -> String {
+    let parts: Vec<&str> = cmdline.split_whitespace().collect();
+    let Some(first) = parts.first() else {
+        return String::new();
+    };
+    let basename = process_basename(first).unwrap_or(first);
+    if !ELEVATION_TOOLS.contains(&basename) {
+        // Not an elevation tool — pass through unchanged.
+        return cmdline.to_string();
+    }
+    let mut i = 1; // skip argv[0]
+    while i < parts.len() {
+        let p = parts[i];
+        if ELEVATION_FLAGS_WITH_VALUE.contains(&p) {
+            i += 2;
+        } else if p.starts_with('-') {
+            // Standalone flag (-i, -s, -E, -n, -v, -l, -K, ...) or
+            // `--user=root`-style. Skip one slot.
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    if i >= parts.len() {
+        String::new()
+    } else {
+        parts[i..].join(" ")
+    }
+}
+
 /// Basename of an executable path, suitable for `%p` substitution
 /// in dialog messages and for icon-theme lookup. Returns `None` for
 /// paths with no file component or non-UTF-8 names. Does not borrow
@@ -956,5 +1042,89 @@ mod tests {
         // `Path::file_name()` returns None for "/", "..", "."
         assert_eq!(process_basename("/"), None);
         assert_eq!(process_basename(""), None);
+    }
+
+    // ---- strip_elevation_prefix --------------------------------------
+
+    #[test]
+    fn strip_elevation_passes_through_non_elevation_cmdline() {
+        // Plain `ls -la` has no elevation prefix; return as-is.
+        assert_eq!(strip_elevation_prefix("ls -la"), "ls -la");
+        assert_eq!(
+            strip_elevation_prefix("/usr/bin/firefox"),
+            "/usr/bin/firefox"
+        );
+    }
+
+    #[test]
+    fn strip_elevation_handles_pkexec() {
+        assert_eq!(strip_elevation_prefix("pkexec true"), "true");
+        assert_eq!(
+            strip_elevation_prefix("pkexec /usr/bin/cat /etc/hosts"),
+            "/usr/bin/cat /etc/hosts"
+        );
+        assert_eq!(
+            strip_elevation_prefix("pkexec --user root systemctl restart foo"),
+            "systemctl restart foo"
+        );
+        assert_eq!(
+            strip_elevation_prefix("pkexec --disable-internal-agent --user root /bin/sh"),
+            "/bin/sh"
+        );
+    }
+
+    #[test]
+    fn strip_elevation_handles_sudo() {
+        // The motivating case: sudo / sudo-rs with a single command.
+        assert_eq!(strip_elevation_prefix("sudo true"), "true");
+        assert_eq!(strip_elevation_prefix("sudo-rs true"), "true");
+        // Common multi-arg form.
+        assert_eq!(
+            strip_elevation_prefix("sudo systemctl restart foo"),
+            "systemctl restart foo"
+        );
+        // sudo-specific value-taking flags.
+        assert_eq!(strip_elevation_prefix("sudo -u root /bin/sh"), "/bin/sh");
+        assert_eq!(
+            strip_elevation_prefix("sudo -E -u root systemctl daemon-reload"),
+            "systemctl daemon-reload"
+        );
+        assert_eq!(
+            strip_elevation_prefix("sudo --user root --group docker docker ps"),
+            "docker ps"
+        );
+    }
+
+    #[test]
+    fn strip_elevation_handles_su() {
+        assert_eq!(strip_elevation_prefix("su -c whoami"), "whoami");
+    }
+
+    #[test]
+    fn strip_elevation_handles_doas() {
+        assert_eq!(strip_elevation_prefix("doas pacman -Syu"), "pacman -Syu");
+    }
+
+    #[test]
+    fn strip_elevation_with_absolute_path() {
+        // Argv[0] could be the absolute path; we match by basename.
+        assert_eq!(strip_elevation_prefix("/usr/bin/sudo true"), "true");
+        assert_eq!(
+            strip_elevation_prefix("/usr/bin/pkexec /usr/bin/gparted"),
+            "/usr/bin/gparted"
+        );
+    }
+
+    #[test]
+    fn strip_elevation_returns_empty_for_no_command() {
+        // `sudo -i` runs a login shell with no specific command.
+        assert_eq!(strip_elevation_prefix("sudo -i"), "");
+        assert_eq!(strip_elevation_prefix("sudo"), "");
+        assert_eq!(strip_elevation_prefix("pkexec"), "");
+    }
+
+    #[test]
+    fn strip_elevation_empty_input() {
+        assert_eq!(strip_elevation_prefix(""), "");
     }
 }

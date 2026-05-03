@@ -8,6 +8,23 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] — 2026-05-04
+
+Patch: dialog process names + AUR publish.
+
+- **Dialog and audit logs now show the elevated program, not the
+  wrapper**, for both sudo (PAM module path) and gparted-style
+  apps that have their own polkit action but call pkexec
+  internally. New shared `sentinel_shared::strip_elevation_prefix`
+  helper recognises pkexec/sudo/sudo-rs/su/doas and strips both
+  standalone flags and value-taking flags (`--user`/`-u`/etc).
+- **AUR publish unblocked.** `KSXGitHub/github-actions-deploy-aur`
+  bumped from v2.7.2 (broken against the 2026-04 archlinux:base
+  with `==> ERROR: There is no secret key available to sign with.`)
+  to v4.1.3.
+
+[Full notes](https://github.com/atayozcan/sentinel/releases/tag/v0.6.1)
+
 ## [0.6.0] — 2026-05-03
 
 Comprehensive review follow-through: bug fixes in PAM module + agent,

@@ -184,8 +184,13 @@ jobs:
       # Pin to a tagged release (not @master) so a hijacked action can't
       # silently push to AUR with our key. Bump deliberately. Latest
       # versions: https://github.com/KSXGitHub/github-actions-deploy-aur/releases
+      #
+      # v2.7.2 broke against the 2026-04 archlinux:base image with
+      # `==> ERROR: There is no secret key available to sign with.`;
+      # v4.1.3 (used here) has the docker-image fix that disables
+      # signing properly.
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: ${{ matrix.pkgname }}
           pkgbuild: aur-stage/PKGBUILD

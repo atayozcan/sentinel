@@ -41,12 +41,12 @@ Full docs live on the **[wiki](https://github.com/atayozcan/sentinel/wiki)**:
 yay -S sentinel
 
 # Debian / Ubuntu
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.6.0-1_amd64.deb
-sudo apt install ./sentinel_0.6.0-1_amd64.deb
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.6.1-1_amd64.deb
+sudo apt install ./sentinel_0.6.1-1_amd64.deb
 
 # Fedora / openSUSE
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.6.0-1.x86_64.rpm
-sudo dnf install ./sentinel-0.6.0-1.x86_64.rpm
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.6.1-1.x86_64.rpm
+sudo dnf install ./sentinel-0.6.1-1.x86_64.rpm
 
 # NixOS — flake at the repo root
 nix run github:atayozcan/sentinel -- --timeout 10 --randomize
