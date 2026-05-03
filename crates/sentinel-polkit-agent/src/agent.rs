@@ -74,30 +74,27 @@ impl Agent {
         };
 
         // `polkit.subject-pid` is the user-facing process that
-        // requested the action (the GUI app, the user's shell). That's
-        // what we want to surface in the dialog and audit logs.
+        // requested the action (the GUI app, the user's shell).
         // `polkit.caller-pid` is whichever polkit-mediated tool got
-        // there first (e.g. `pkexec`, GNOME Software's
-        // PackageKit-Authentication helper) — useful as a fallback
-        // when subject-pid isn't present, but its `/proc` info is the
-        // mediator, not the human-facing app.
+        // there first — for `pkexec foo`, the caller is pkexec
+        // itself with `foo` as argv[1]. We display info about the
+        // PROGRAM-TO-BE-ELEVATED, not the requester, because that's
+        // the UAC question the user is answering.
         let subject_pid = details
             .get("polkit.subject-pid")
-            .or_else(|| details.get("polkit.caller-pid"))
+            .and_then(|s| s.parse::<i32>().ok());
+        let caller_pid = details
+            .get("polkit.caller-pid")
             .and_then(|s| s.parse::<i32>().ok());
 
-        // Prefer the action's intent over the subject's identity when
-        // polkit gives it to us. `org.freedesktop.policykit.exec`
-        // (i.e. `pkexec`) ships the program-to-be-elevated and the
-        // full argv as `details["program"]` and
-        // `details["command_line"]`. Without this preference, every
-        // `pkexec foo` displayed as "bash" or "sudo-rs" in the
-        // dialog and audit logs — true but useless. The user wants
-        // to see what's about to run, not who's asking.
-        //
-        // For non-pkexec actions (NetworkManager.modify-system,
-        // systemd1.manage-units, etc.) these keys aren't set, and we
-        // fall back to the subject-pid /proc lookup.
+        // For `org.freedesktop.policykit.exec`, polkit *should* forward
+        // pkexec's `details["program"]` / `details["command_line"]` to
+        // the agent — but in practice (verified on polkit 0.130 +
+        // cosmic) it doesn't; the agent only sees the polkit.* keys.
+        // When present we use those, otherwise we recover the elevated
+        // argv from `/proc/<caller-pid>/cmdline` (the pkexec process
+        // itself; argv after stripping "pkexec" + any flags is the
+        // elevated command).
         let elevated_program = details
             .get("program")
             .filter(|s| !s.is_empty())
@@ -106,10 +103,28 @@ impl Agent {
             .get("command_line")
             .filter(|s| !s.is_empty())
             .cloned();
-        let process_exe =
-            elevated_program.or_else(|| subject_pid.and_then(sentinel_shared::procfs::read_exe));
-        let process_cmdline = elevated_command_line
-            .or_else(|| subject_pid.and_then(sentinel_shared::procfs::read_cmdline));
+        let pkexec_recovered = if action_id == "org.freedesktop.policykit.exec"
+            && elevated_command_line.is_none()
+        {
+            caller_pid
+                .and_then(sentinel_shared::procfs::read_cmdline)
+                .map(|raw| strip_pkexec_prefix(&raw))
+                .filter(|s| !s.is_empty())
+        } else {
+            None
+        };
+
+        let process_cmdline = elevated_command_line.or_else(|| pkexec_recovered.clone());
+        let process_exe = elevated_program.or_else(|| {
+            // Prefer the first whitespace-separated token of the
+            // recovered/forwarded cmdline; falls back to the subject's
+            // exe (typically the user's shell) only when we have
+            // nothing better.
+            process_cmdline
+                .as_deref()
+                .and_then(|s| s.split_whitespace().next().map(String::from))
+                .or_else(|| subject_pid.and_then(sentinel_shared::procfs::read_exe))
+        });
         let process_cwd = subject_pid.and_then(sentinel_shared::procfs::read_cwd);
         let username_for_task = username.clone();
 
@@ -205,6 +220,47 @@ fn cookie_prefix(cookie: &str) -> String {
     cookie.chars().take(8).collect()
 }
 
+/// Strip a leading `pkexec` and any `--option`-style flags from a
+/// `/proc/<caller-pid>/cmdline` reading, leaving the elevated command.
+/// Returns the joined remainder (whitespace-separated, matching what
+/// `procfs::read_cmdline` produces). Empty if nothing remains.
+///
+/// `pkexec` flags per pkexec(1):
+///   `--user USER` / `-u USER`     — takes one value argument
+///   `--disable-internal-agent`    — standalone
+///   `--keep-cwd`                  — standalone
+///   `--version`, `--help`         — standalone
+///
+/// Examples:
+///   "pkexec true"                        → "true"
+///   "pkexec /usr/bin/cat /etc/hosts"     → "/usr/bin/cat /etc/hosts"
+///   "pkexec --user root systemctl x"     → "systemctl x"
+///   "pkexec --disable-internal-agent foo"→ "foo"
+///   "pkexec"                             → ""    (no target)
+fn strip_pkexec_prefix(cmdline: &str) -> String {
+    let parts: Vec<&str> = cmdline.split_whitespace().collect();
+    let mut i = 1; // skip the leading "pkexec"
+    while i < parts.len() {
+        let p = parts[i];
+        if p == "--user" || p == "-u" {
+            // Consume the flag and its mandatory value.
+            i += 2;
+        } else if p.starts_with('-') {
+            // Standalone flag (or `--user=root` form), or a `--`
+            // separator. Skip just one slot.
+            i += 1;
+        } else {
+            // First non-flag word is the elevated program.
+            break;
+        }
+    }
+    if i >= parts.len() {
+        String::new()
+    } else {
+        parts[i..].join(" ")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,5 +286,47 @@ mod tests {
         // at &cookie[..8] would have panicked on a non-char boundary.
         let cookie = "あいうえおかきくけこ";
         assert_eq!(cookie_prefix(cookie), "あいうえおかきく");
+    }
+
+    #[test]
+    fn strip_pkexec_simple() {
+        assert_eq!(strip_pkexec_prefix("pkexec true"), "true");
+    }
+
+    #[test]
+    fn strip_pkexec_with_args() {
+        assert_eq!(
+            strip_pkexec_prefix("pkexec /usr/bin/cat /etc/hosts"),
+            "/usr/bin/cat /etc/hosts"
+        );
+    }
+
+    #[test]
+    fn strip_pkexec_with_flags() {
+        assert_eq!(
+            strip_pkexec_prefix("pkexec --user root systemctl restart foo"),
+            "systemctl restart foo"
+        );
+        assert_eq!(
+            strip_pkexec_prefix("pkexec --disable-internal-agent --user root /bin/sh"),
+            "/bin/sh"
+        );
+    }
+
+    #[test]
+    fn strip_pkexec_only_returns_empty() {
+        assert_eq!(strip_pkexec_prefix("pkexec"), "");
+    }
+
+    #[test]
+    fn strip_pkexec_empty_input() {
+        assert_eq!(strip_pkexec_prefix(""), "");
+    }
+
+    #[test]
+    fn strip_pkexec_only_flags_returns_empty() {
+        // Pathological: pkexec with only flags and no command is
+        // invalid usage anyway, but the function shouldn't panic.
+        assert_eq!(strip_pkexec_prefix("pkexec --user root"), "");
     }
 }
