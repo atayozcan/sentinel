@@ -1,5 +1,17 @@
 use clap::{Parser, Subcommand};
 
+/// How the helper paints its dialog. Resolved by [`Args::effective_render_mode`]
+/// from `--windowed` / `--layer-shell` and the `XDG_CURRENT_DESKTOP`
+/// blocklist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderMode {
+    /// `zwlr-layer-shell-v1` overlay covering the whole output.
+    LayerShell,
+    /// Plain `xdg-toplevel` window. Used on Mutter-based desktops that
+    /// don't implement `zwlr-layer-shell-v1`.
+    Windowed,
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Sentinel confirmation helper")]
 pub struct Args {
@@ -76,8 +88,132 @@ pub struct Args {
     /// (UAC-style audio cue). Empty string = silent. Resolved via
     /// `canberra-gtk-play` if installed; otherwise no sound is
     /// played and we don't error out.
-    #[arg(long, default_value = "")]
+    #[arg(long, default_value_t = String::new())]
     pub sound_name: String,
+}
+
+impl Args {
+    /// Decide whether to use layer-shell or xdg-toplevel rendering.
+    ///
+    /// Priority:
+    /// 1. `--windowed` → always windowed.
+    /// 2. `--layer-shell` → always layer-shell (override the heuristic).
+    /// 3. else: layer-shell unless `XDG_CURRENT_DESKTOP` indicates a
+    ///    compositor known to lack `zwlr-layer-shell-v1` (GNOME/Mutter,
+    ///    Unity, Pantheon, Budgie — all Mutter-based).
+    ///
+    /// Without this auto-downgrade, the helper hard-fails on those
+    /// systems and the user sees no dialog at all.
+    pub fn effective_render_mode(&self, xdg_current_desktop: Option<&str>) -> RenderMode {
+        if self.windowed {
+            return RenderMode::Windowed;
+        }
+        if self.layer_shell {
+            return RenderMode::LayerShell;
+        }
+        match xdg_current_desktop {
+            Some(d) if desktop_lacks_layer_shell(d) => RenderMode::Windowed,
+            _ => RenderMode::LayerShell,
+        }
+    }
+}
+
+/// Pure parser for the `XDG_CURRENT_DESKTOP` value (colon-separated,
+/// case-insensitive). Maintaining a *blocklist* (rather than allowlist)
+/// means new wlroots-style compositors get the layer-shell path
+/// automatically; only known-Mutter-based desktops fall through to
+/// xdg-toplevel.
+pub fn desktop_lacks_layer_shell(xdg: &str) -> bool {
+    xdg.split(':').any(|d| {
+        let d = d.trim();
+        d.eq_ignore_ascii_case("GNOME")
+            || d.eq_ignore_ascii_case("GNOME-Classic")
+            || d.eq_ignore_ascii_case("GNOME-Flashback")
+            || d.eq_ignore_ascii_case("Unity")
+            || d.eq_ignore_ascii_case("Pantheon") // elementary OS — Mutter-based
+            || d.eq_ignore_ascii_case("Budgie") // Budgie 10.x is Mutter-based
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args_with_flags(windowed: bool, layer_shell: bool) -> Args {
+        Args {
+            generate: None,
+            title: String::new(),
+            message: String::new(),
+            secondary: String::new(),
+            process_exe: None,
+            process_cmdline: None,
+            process_pid: None,
+            process_cwd: None,
+            requesting_user: None,
+            action: None,
+            timeout: 30,
+            min_time: 500,
+            randomize: false,
+            windowed,
+            layer_shell,
+            sound_name: String::new(),
+        }
+    }
+
+    #[test]
+    fn windowed_flag_wins() {
+        let a = args_with_flags(true, false);
+        assert_eq!(
+            a.effective_render_mode(Some("COSMIC")),
+            RenderMode::Windowed
+        );
+        assert_eq!(a.effective_render_mode(Some("GNOME")), RenderMode::Windowed);
+    }
+
+    #[test]
+    fn layer_shell_flag_overrides_heuristic() {
+        let a = args_with_flags(false, true);
+        // GNOME would normally trigger windowed fallback; --layer-shell forces layer-shell.
+        assert_eq!(
+            a.effective_render_mode(Some("GNOME")),
+            RenderMode::LayerShell
+        );
+    }
+
+    #[test]
+    fn auto_falls_back_on_mutter() {
+        let a = args_with_flags(false, false);
+        assert_eq!(a.effective_render_mode(Some("GNOME")), RenderMode::Windowed);
+        assert_eq!(
+            a.effective_render_mode(Some("ubuntu:GNOME")),
+            RenderMode::Windowed
+        );
+        assert_eq!(
+            a.effective_render_mode(Some("Pantheon")),
+            RenderMode::Windowed
+        );
+    }
+
+    #[test]
+    fn auto_uses_layer_shell_on_wlroots_family() {
+        let a = args_with_flags(false, false);
+        assert_eq!(
+            a.effective_render_mode(Some("COSMIC")),
+            RenderMode::LayerShell
+        );
+        assert_eq!(
+            a.effective_render_mode(Some("Hyprland")),
+            RenderMode::LayerShell
+        );
+        assert_eq!(a.effective_render_mode(Some("KDE")), RenderMode::LayerShell);
+    }
+
+    #[test]
+    fn missing_env_treats_as_unknown_layer_shell() {
+        // No XDG_CURRENT_DESKTOP set; try layer-shell and let it fail loudly if unsupported.
+        let a = args_with_flags(false, false);
+        assert_eq!(a.effective_render_mode(None), RenderMode::LayerShell);
+    }
 }
 
 #[derive(Subcommand, Debug, Clone)]

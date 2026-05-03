@@ -1,5 +1,10 @@
 # Sentinel
 
+[![CI](https://github.com/atayozcan/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/atayozcan/sentinel/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/atayozcan/sentinel?include_prereleases&sort=semver)](https://github.com/atayozcan/sentinel/releases/latest)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-blue.svg)](rust-toolchain.toml)
+
 A Windows UAC-style confirmation dialog for Linux privilege escalation.
 PAM module + libcosmic helper, designed for COSMIC and `sudo-rs`,
 Wayland-only.
@@ -36,12 +41,12 @@ Full docs live on the **[wiki](https://github.com/atayozcan/sentinel/wiki)**:
 yay -S sentinel
 
 # Debian / Ubuntu
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.5.2-1_amd64.deb
-sudo apt install ./sentinel_0.5.2-1_amd64.deb
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.6.0-1_amd64.deb
+sudo apt install ./sentinel_0.6.0-1_amd64.deb
 
 # Fedora / openSUSE
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.5.2-1.x86_64.rpm
-sudo dnf install ./sentinel-0.5.2-1.x86_64.rpm
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.6.0-1.x86_64.rpm
+sudo dnf install ./sentinel-0.6.0-1.x86_64.rpm
 
 # NixOS — flake at the repo root
 nix run github:atayozcan/sentinel -- --timeout 10 --randomize
@@ -55,6 +60,14 @@ pkexec ./install.sh
 See the [Installation](https://github.com/atayozcan/sentinel/wiki/Installation)
 wiki page for full instructions, including the prebuilt binary tarball
 and per-distro details.
+
+> **Why `pkexec` for the source install?** The installer needs root
+> to write to `/etc/pam.d/`, `/etc/security/`, `/usr/lib/security/`,
+> and `/etc/systemd/system/`. `pkexec` routes that elevation through
+> polkit (which Sentinel itself can be wired into post-install),
+> matches the security model of distros that have phased out `sudo`
+> in favour of polkit-mediated elevation, and keeps a clean audit
+> trail. `sudo` works too if you prefer.
 
 ## What it does
 

@@ -2,7 +2,6 @@
 
 dialog-title-default     = Authentifizierung erforderlich
 dialog-message-default   = Die Anwendung „{$process}“ fordert erhöhte Rechte an.
-dialog-secondary-default = Klicken Sie auf „Erlauben“, um fortzufahren, oder auf „Verweigern“, um abzubrechen.
 
 button-allow = Erlauben
 button-deny  = Verweigern

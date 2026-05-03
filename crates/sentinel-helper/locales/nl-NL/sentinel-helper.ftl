@@ -2,7 +2,6 @@
 
 dialog-title-default     = Verificatie vereist
 dialog-message-default   = De toepassing "{$process}" vraagt verhoogde rechten aan.
-dialog-secondary-default = Klik op "Toestaan" om door te gaan of op "Weigeren" om te annuleren.
 
 button-allow = Toestaan
 button-deny  = Weigeren

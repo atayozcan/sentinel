@@ -15,11 +15,11 @@ That makes the load-bearing piece host-only. The companion
    `/var/lib/flatpak/exports/bin/...` — paths that vary by install,
    are not predictable from the PAM side, and require runtime
    environment we cannot rely on inside a PAM hook.
-2. The helper needs raw Wayland access to acquire `ext-session-lock-v1`
-   on a privileged surface. The Flatpak sandbox can grant Wayland
-   socket access via `--socket=wayland`, but the lock-screen surface
-   protocol is privileged enough that some compositors deny it to
-   sandboxed clients.
+2. The helper needs raw Wayland access to bind a `zwlr-layer-shell-v1`
+   overlay surface with exclusive keyboard interactivity. The Flatpak
+   sandbox can grant Wayland socket access via `--socket=wayland`, but
+   the layer-shell protocol is privileged enough that some compositors
+   deny it to sandboxed clients.
 3. A user installing only the helper Flatpak gets nothing — the PAM
    module is the active component.
 
@@ -27,9 +27,10 @@ That makes the load-bearing piece host-only. The companion
 
 | Channel  | Status | Notes |
 | -------- | ------ | ----- |
-| AUR      | First-class | See `packaging/arch/PKGBUILD`. |
-| .deb     | Planned | Packaging directory will mirror `packaging/arch/`. |
-| .rpm     | Planned | Same. |
+| AUR      | First-class | `sentinel` and `sentinel-git`. See `packaging/arch/PKGBUILD`. |
+| .deb     | Shipped | Built by `release.yml`; download from GitHub releases. |
+| .rpm     | Shipped | Built by `release.yml`; download from GitHub releases. |
+| NixOS    | Shipped | Flake at the repo root, `nix run github:atayozcan/sentinel`. |
 | Flatpak  | Not viable | See above. |
 | Source   | Supported | `pkexec ./install.sh`. |
 

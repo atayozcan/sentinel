@@ -50,6 +50,18 @@ for arg in "$@"; do
     esac
 done
 
+# Polkit agents that conflict with sentinel-polkit-agent's session
+# registration. Knocked down with SIGTERM by the in-place restart logic
+# below before we spawn ours. Update this list when adding compositor
+# coverage to packaging/xdg-autostart/.
+COMPETING_AGENTS=(
+    cosmic-osd
+    polkit-gnome-authentication-agent-1
+    polkit-kde-authentication-agent-1
+    lxpolkit
+    mate-polkit
+)
+
 # -------------- rollback ---------------------------------------------------
 
 rollback() {
@@ -287,15 +299,29 @@ restart_polkit_agent() {
         return 0
     fi
 
-    if pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1; then
+    # `pkill -fx <abs-path>` — exact-match against the *full* cmdline:
+    #
+    #   - `-x` alone matches /proc/<pid>/comm (15 chars, TASK_COMM_LEN);
+    #     "sentinel-polkit-agent" is 21 chars so the comm is truncated
+    #     and `-x sentinel-polkit-agent` would silently miss the running
+    #     agent.
+    #   - `-f` alone matches any process whose cmdline *contains* the
+    #     pattern. That includes the calling shell (whose cmdline has
+    #     this very script in it) and pkill itself, so it self-killed
+    #     the install script in older versions.
+    #   - `-fx` requires the full cmdline to equal the pattern exactly.
+    #     The agent runs as `/usr/lib/sentinel-polkit-agent` with no
+    #     args, which matches; `pkill` and the surrounding shell don't.
+    local agent_bin="$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
+    if pgrep -u "$uid" -fx -- "$agent_bin" >/dev/null 2>&1; then
         step "Stopping running polkit agent…"
-        pkill -TERM -u "$uid" -f sentinel-polkit-agent 2>/dev/null || true
+        pkill -TERM -u "$uid" -fx -- "$agent_bin" 2>/dev/null || true
         for _ in 1 2 3 4 5; do
             sleep 0.2
-            pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1 || break
+            pgrep -u "$uid" -fx -- "$agent_bin" >/dev/null 2>&1 || break
         done
         # Force-kill any stragglers that ignored SIGTERM.
-        pkill -KILL -u "$uid" -f sentinel-polkit-agent 2>/dev/null || true
+        pkill -KILL -u "$uid" -fx -- "$agent_bin" 2>/dev/null || true
         # Clean any stale bypass socket the dying agent may have left.
         rm -f -- "/run/user/$uid/sentinel-agent.sock"
     fi
@@ -328,8 +354,15 @@ restart_polkit_agent() {
     # supervise their own polkit agent (cosmic-session → cosmic-osd)
     # will respawn theirs within ~50–200 ms, so we kill + spawn in
     # immediate succession with NO work between.
+    # The long competitor names (polkit-gnome-authentication-agent-1 =
+    # 35 chars, polkit-kde-authentication-agent-1 = 33 chars) don't fit
+    # in /proc/<pid>/comm's 15-char TASK_COMM_LEN, so `-x` would
+    # silently miss them. Use `-f` against the basename — the names are
+    # unique enough that false-positive matches (e.g. someone editing a
+    # file named `polkit-gnome-authentication-agent-1.log`) are
+    # negligible in practice.
     local competitors_killed=0
-    for comp_name in cosmic-osd polkit-gnome-authentication-agent-1 polkit-kde-authentication-agent-1 lxpolkit mate-polkit; do
+    for comp_name in "${COMPETING_AGENTS[@]}"; do
         if pgrep -u "$uid" -f "$comp_name" >/dev/null 2>&1; then
             pkill -TERM -u "$uid" -f "$comp_name" 2>/dev/null || true
             competitors_killed=1
@@ -377,7 +410,7 @@ restart_polkit_agent() {
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
         sleep 0.2
         if [[ -S "/run/user/$uid/sentinel-agent.sock" ]] \
-            && pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1 \
+            && pgrep -u "$uid" -fx -- "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent" >/dev/null 2>&1 \
             && journalctl -t sentinel-polkit-agent \
                  --since "$agent_started_marker" --no-pager 2>/dev/null \
                  | grep -q "registered as polkit auth agent"; then

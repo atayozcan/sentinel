@@ -2,7 +2,6 @@
 
 dialog-title-default     = Wymagane uwierzytelnienie
 dialog-message-default   = Aplikacja „{$process}” żąda podwyższonych uprawnień.
-dialog-secondary-default = Kliknij „Zezwól”, aby kontynuować, lub „Odmów”, aby anulować.
 
 button-allow = Zezwól
 button-deny  = Odmów

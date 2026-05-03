@@ -378,7 +378,9 @@ mod tests {
         const REQUIRED_KEYS: &[&str] = &[
             "dialog-title-default",
             "dialog-message-default",
-            "dialog-secondary-default",
+            // `dialog-secondary-default` was removed in v0.6.0 — the
+            // built-in default secondary line is empty (the helper
+            // renders an admin-set secondary verbatim if non-empty).
             "button-allow",
             "button-deny",
             "toggle-show-details",
@@ -400,6 +402,92 @@ mod tests {
                 assert!(
                     bundle.get_message(key).is_some(),
                     "bundle {tag} is missing key {key}"
+                );
+            }
+        }
+    }
+
+    /// Pull the raw value (right-hand side) for a key out of an FTL
+    /// source. Our FTLs have one line per key, no continuation —
+    /// trivial linear scan.
+    fn ftl_value_for<'a>(src: &'a str, key: &str) -> Option<&'a str> {
+        for line in src.lines() {
+            let line = line.trim_end();
+            // Match "key " or "key=" — keys can have trailing whitespace
+            // before the `=` per FTL syntax.
+            let Some(rest) = line.strip_prefix(key) else {
+                continue;
+            };
+            let rest = rest.trim_start();
+            if let Some(value) = rest.strip_prefix('=') {
+                return Some(value.trim_start());
+            }
+        }
+        None
+    }
+
+    /// Extract the set of `{$name}` placeholders from a fluent value.
+    /// Doesn't try to handle nested expressions or selectors — our
+    /// values are single-placeholder simple substitutions.
+    fn placeholders(value: &str) -> std::collections::BTreeSet<String> {
+        let mut out = std::collections::BTreeSet::new();
+        let bytes = value.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'$' {
+                let start = i + 2;
+                let mut end = start;
+                while end < bytes.len() && bytes[end] != b'}' {
+                    end += 1;
+                }
+                if end < bytes.len() {
+                    if let Ok(name) = std::str::from_utf8(&bytes[start..end]) {
+                        out.insert(name.trim().to_string());
+                    }
+                }
+                i = end + 1;
+            } else {
+                i += 1;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_bundle_has_matching_placeholders() {
+        // For every key, every locale's value must contain the same
+        // `{$arg}` set as en-US. Catches a translator who renamed
+        // `{$seconds}` to `{$secondes}` etc. — without this, runtime
+        // substitution fails silently.
+        let en_src = ftl_for("en-US").expect("en-US present");
+        let mut keys: Vec<&str> = en_src
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim_start();
+                if l.starts_with('#') || l.is_empty() {
+                    return None;
+                }
+                l.split_once('=').map(|(k, _)| k.trim())
+            })
+            .collect();
+        keys.sort();
+        keys.dedup();
+
+        for key in keys {
+            let en_value = ftl_value_for(en_src, key).expect("en-US value");
+            let en_phs = placeholders(en_value);
+            for (tag, src) in BUNDLES {
+                if *tag == "en-US" {
+                    continue;
+                }
+                let Some(value) = ftl_value_for(src, key) else {
+                    continue;
+                };
+                let phs = placeholders(value);
+                assert_eq!(
+                    en_phs, phs,
+                    "bundle {tag}: placeholder mismatch on key {key} \
+                     (en-US has {en_phs:?}, {tag} has {phs:?})"
                 );
             }
         }

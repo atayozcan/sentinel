@@ -59,6 +59,23 @@ impl ApprovalQueue {
         }
         None
     }
+
+    /// Drop every queued approval. Called by `Agent::cancel_authentication`
+    /// to invalidate any approval the user pushed for the cookie polkit
+    /// is now canceling. Without this, a `BeginAuthentication → Allow →
+    /// CancelAuthentication → BeginAuthentication → Allow` sequence
+    /// could leave the first push live in the queue with up to 1 s TTL,
+    /// and the second flow's `polkit-agent-helper-1` would consume it
+    /// — auditing the second action under the first action's id.
+    ///
+    /// Correctness rests on the per-Agent `inflight` mutex: at any
+    /// moment ≤1 approval is queued, and that approval belongs to the
+    /// session currently being processed. Cancel ⇒ drain ⇒ next push
+    /// is fresh.
+    pub async fn drain(&self) {
+        let mut q = self.inner.lock().await;
+        q.clear();
+    }
 }
 
 #[cfg(test)]
@@ -97,5 +114,26 @@ mod tests {
         q.push("second".into()).await;
         assert_eq!(q.take_one().await.unwrap().action_id, "first");
         assert_eq!(q.take_one().await.unwrap().action_id, "second");
+    }
+
+    #[tokio::test]
+    async fn drain_clears_queue() {
+        let q = ApprovalQueue::new();
+        q.push("stale".into()).await;
+        q.drain().await;
+        assert!(q.take_one().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn push_drain_push_only_returns_second() {
+        // Models the cross-action race: a leftover approval from a
+        // canceled session must not be picked up by the next one.
+        let q = ApprovalQueue::new();
+        q.push("canceled".into()).await;
+        q.drain().await;
+        q.push("fresh".into()).await;
+        let a = q.take_one().await.expect("fresh expected");
+        assert_eq!(a.action_id, "fresh");
+        assert!(q.take_one().await.is_none());
     }
 }

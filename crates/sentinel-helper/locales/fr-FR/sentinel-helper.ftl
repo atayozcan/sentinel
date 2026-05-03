@@ -2,7 +2,6 @@
 
 dialog-title-default     = Authentification requise
 dialog-message-default   = L’application « {$process} » demande des privilèges élevés.
-dialog-secondary-default = Cliquez sur « Autoriser » pour continuer ou sur « Refuser » pour annuler.
 
 button-allow = Autoriser
 button-deny  = Refuser

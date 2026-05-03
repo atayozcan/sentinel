@@ -16,3 +16,7 @@ path = "src/lib.rs"
 serde.workspace = true
 toml.workspace = true
 log.workspace = true
+# Shared `audit::init_syslog` lives here so the PAM module and the
+# polkit agent share the boilerplate. The helper transitively depends
+# on it but doesn't reference the module; LTO drops the unused code.
+syslog.workspace = true

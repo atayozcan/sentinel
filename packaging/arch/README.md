@@ -27,7 +27,7 @@ makepkg -si --clean
 
 # 5. Commit and push.
 git add PKGBUILD .SRCINFO
-git commit -m "sentinel 0.2.0-1: initial release"
+git commit -m "sentinel ${pkgver}-${pkgrel}: initial release"
 git push origin master
 
 # 6. Repeat for sentinel-git in a separate clone.

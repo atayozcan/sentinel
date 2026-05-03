@@ -1,14 +1,17 @@
 # sentinel-helper UI chrome — strings the helper renders itself.
 #
-# The dialog title/message/secondary are admin-provided through
+# The dialog title/message are admin-provided through
 # /etc/security/sentinel.conf, but if they still equal the built-in
 # defaults (the strings registered in `sentinel-shared` as
-# `DEFAULT_TITLE`/`DEFAULT_MESSAGE`/`DEFAULT_SECONDARY`), the helper
-# substitutes the locale-specific version below. Customizing the
-# config opts out of this — admin's strings are passed through.
+# `DEFAULT_TITLE`/`DEFAULT_MESSAGE`), the helper substitutes the
+# locale-specific version below. Customizing the config opts out of
+# this — admin's strings are passed through.
+#
+# `secondary` (an admin-set hint line below the message) has no
+# built-in default; if the admin sets one, the helper renders it
+# verbatim.
 dialog-title-default     = Authentication Required
 dialog-message-default   = The application "{$process}" is requesting elevated privileges.
-dialog-secondary-default = Click "Allow" to continue or "Deny" to cancel.
 
 button-allow = Allow
 button-deny  = Deny

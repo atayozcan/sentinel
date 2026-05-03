@@ -5,7 +5,7 @@ mod i18n;
 
 use app::{ConfirmApp, loaded_outcome};
 use clap::{CommandFactory, Parser};
-use cli::{Args, GenSubcommand};
+use cli::{Args, GenSubcommand, RenderMode};
 use std::sync::Arc;
 
 const BIN: &str = "sentinel-helper";
@@ -33,34 +33,28 @@ fn main() -> anyhow::Result<()> {
     // painted yet. Empty sound_name = no-op.
     audio::play_named(&args.sound_name);
 
-    // Decide layer-shell vs xdg-toplevel rendering. Priority:
-    //   1. --windowed   → always windowed.
-    //   2. --layer-shell → always layer-shell (override the heuristic).
-    //   3. else: layer-shell unless XDG_CURRENT_DESKTOP indicates a
-    //      compositor known to lack `zwlr-layer-shell-v1` (GNOME/Mutter,
-    //      Unity, Pantheon — all Mutter-based). Without this auto-
-    //      downgrade, the helper hard-fails on those systems and the
-    //      user sees no dialog at all.
-    let use_windowed = args.windowed || (!args.layer_shell && compositor_lacks_layer_shell());
+    let xdg_current_desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
+    let render_mode = args.effective_render_mode(xdg_current_desktop.as_deref());
 
-    if use_windowed && !args.windowed && !args.layer_shell {
+    if render_mode == RenderMode::Windowed && !args.windowed && !args.layer_shell {
         eprintln!(
             "{BIN}: detected compositor without zwlr-layer-shell-v1 \
              (XDG_CURRENT_DESKTOP={:?}); auto-falling back to windowed mode. \
              Pass --layer-shell to override.",
-            std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default()
+            xdg_current_desktop.as_deref().unwrap_or("")
         );
     }
 
-    // Re-bind for the move into the cosmic app: store the resolved
-    // mode on the args struct so app.rs sees the same decision.
+    // Carry the resolved mode on `args.windowed` so `app.rs` reads the
+    // same decision without needing the env-var lookup. This is the
+    // single mutation; everything else flows through `Arc<Args>`.
     let mut args = args;
-    args.windowed = use_windowed;
+    args.windowed = render_mode == RenderMode::Windowed;
 
     let mut settings = cosmic::app::Settings::default()
         .transparent(true)
         .exit_on_close(true);
-    if !args.windowed {
+    if render_mode == RenderMode::LayerShell {
         // Layer-shell path: no xdg toplevel, the overlay surface is created in init().
         settings = settings.no_main_window(true);
     } else {
@@ -75,32 +69,6 @@ fn main() -> anyhow::Result<()> {
     let outcome = loaded_outcome();
     println!("{outcome}");
     std::process::exit(outcome.exit_code());
-}
-
-/// True for compositors known to *not* implement `zwlr-layer-shell-v1`.
-/// Reads `XDG_CURRENT_DESKTOP`; missing env var means "unknown — try
-/// layer-shell and let it fail loudly if it doesn't work".
-fn compositor_lacks_layer_shell() -> bool {
-    std::env::var("XDG_CURRENT_DESKTOP")
-        .map(|v| desktop_lacks_layer_shell(&v))
-        .unwrap_or(false)
-}
-
-/// Pure parser for the `XDG_CURRENT_DESKTOP` value (colon-separated,
-/// case-insensitive). Maintaining a *blocklist* (rather than
-/// allowlist) means new wlroots-style compositors get the layer-shell
-/// path automatically; only known-Mutter-based desktops fall through
-/// to xdg-toplevel.
-fn desktop_lacks_layer_shell(xdg: &str) -> bool {
-    xdg.split(':').any(|d| {
-        let d = d.trim();
-        d.eq_ignore_ascii_case("GNOME")
-            || d.eq_ignore_ascii_case("GNOME-Classic")
-            || d.eq_ignore_ascii_case("GNOME-Flashback")
-            || d.eq_ignore_ascii_case("Unity")
-            || d.eq_ignore_ascii_case("Pantheon") // elementary OS — Mutter-based
-            || d.eq_ignore_ascii_case("Budgie") // Budgie 10.x is Mutter-based
-    })
 }
 
 fn run_gen(g: &GenSubcommand) -> anyhow::Result<()> {
@@ -119,44 +87,21 @@ fn run_gen(g: &GenSubcommand) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cli::desktop_lacks_layer_shell;
+
+    // Sanity check that the parser is still exposed where main.rs would
+    // historically call it. The thorough test cases live in cli.rs.
 
     #[test]
-    fn detects_gnome() {
+    fn desktop_blocklist_matches_gnome() {
         assert!(desktop_lacks_layer_shell("GNOME"));
         assert!(desktop_lacks_layer_shell("ubuntu:GNOME"));
-        assert!(desktop_lacks_layer_shell("GNOME-Classic"));
     }
 
     #[test]
-    fn detects_other_mutter_based() {
-        assert!(desktop_lacks_layer_shell("Unity"));
-        assert!(desktop_lacks_layer_shell("Pantheon"));
-        assert!(desktop_lacks_layer_shell("Budgie:GNOME"));
-    }
-
-    #[test]
-    fn allows_wlroots_family() {
+    fn desktop_blocklist_allows_wlroots() {
         assert!(!desktop_lacks_layer_shell("COSMIC"));
         assert!(!desktop_lacks_layer_shell("Hyprland"));
         assert!(!desktop_lacks_layer_shell("sway"));
-        assert!(!desktop_lacks_layer_shell("KDE"));
-        assert!(!desktop_lacks_layer_shell("wlroots"));
-    }
-
-    #[test]
-    fn case_insensitive() {
-        assert!(desktop_lacks_layer_shell("gnome"));
-        assert!(desktop_lacks_layer_shell("GnOmE"));
-    }
-
-    #[test]
-    fn empty_string_allows() {
-        // Empty XDG_CURRENT_DESKTOP isn't conclusive — try layer-shell.
-        assert!(!desktop_lacks_layer_shell(""));
-    }
-
-    #[test]
-    fn whitespace_around_segments_handled() {
-        assert!(desktop_lacks_layer_shell("ubuntu: GNOME"));
     }
 }

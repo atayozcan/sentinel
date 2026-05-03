@@ -16,7 +16,12 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 /// Process-wide outcome cell. The application writes here on close so that
 /// `main` can output the final result after `cosmic::app::run` returns.
-pub static OUTCOME: AtomicI32 = AtomicI32::new(-1);
+//
+// TODO(cosmic): `cosmic::app::run` doesn't expose a return value channel
+// from inside the iced/cosmic event loop, so we resort to a static
+// atomic for cross-function communication. Replace with a proper
+// channel-based return when libcosmic grows one.
+pub(crate) static OUTCOME: AtomicI32 = AtomicI32::new(-1);
 
 pub fn store_outcome(outcome: Outcome) {
     let v = match outcome {
@@ -94,6 +99,15 @@ impl Application for ConfirmApp {
         };
 
         let task = if windowed {
+            // TODO(GNOME-focus): on GNOME 46+ the xdg-toplevel produced
+            // here may not auto-acquire keyboard focus due to
+            // focus-stealing prevention. If users report the dialog
+            // appearing without keyboard focus on Mutter, investigate
+            // explicit `keyboard_focus = Always` plumbing or a
+            // `wm-class` override that GNOME's policy treats as
+            // privileged. Test on a real GNOME 46+ session before
+            // changing this — the layer-shell path (the primary
+            // target) is unaffected.
             Task::none()
         } else {
             let id = window::Id::unique();
@@ -278,10 +292,15 @@ impl ConfirmApp {
                     if let Some(action) = self.args.action.as_deref() {
                         details = details.push(detail_row(&i18n::t("detail-action"), action));
                     }
-                    // Cap the expanded area at ~220px; long fields scroll.
+                    // Fixed 220 px height: content shorter than that pads
+                    // to a consistent visual block (so the dialog doesn't
+                    // jump in size when the user has only one detail
+                    // field), longer content scrolls. Without this the
+                    // expanded panel can collapse to ~one row when only
+                    // PID is set, which looks broken.
                     info = info.push(
                         scrollable(details)
-                            .height(Length::Shrink)
+                            .height(Length::Fixed(220.0))
                             .width(Length::Fill),
                     );
                 }
@@ -410,20 +429,13 @@ impl ConfirmApp {
         }
     }
 
-    /// Same logic for the secondary line. The default has no tokens, so
-    /// no substitution dance.
+    /// Secondary hint line. As of v0.6.0 the built-in default is empty
+    /// (the previous "Click Allow…" wording broke under
+    /// `randomize_buttons`); we render the admin's value verbatim if
+    /// they set one and the calling render path skips the row when
+    /// empty.
     fn localized_secondary(&self) -> String {
-        let secondary_substituted = sentinel_shared::format_message(
-            sentinel_shared::DEFAULT_SECONDARY,
-            self.args.requesting_user.as_deref().unwrap_or(""),
-            self.args.action.as_deref().unwrap_or(""),
-            &self.process_name_for_subst(),
-        );
-        if self.args.secondary == secondary_substituted {
-            i18n::t("dialog-secondary-default")
-        } else {
-            self.args.secondary.clone()
-        }
+        self.args.secondary.clone()
     }
 
     fn process_name_for_subst(&self) -> String {
@@ -447,26 +459,41 @@ fn detail_row<'a>(label: &str, value: &str) -> Element<'a, Message> {
         .into()
 }
 
+/// Generic shield icon used when the requesting binary's basename
+/// has no theme match. Available in every standard freedesktop icon
+/// theme (Adwaita, Pop, Yaru, Breeze, …).
+const FALLBACK_ICON_NAME: &str = "system-lock-screen";
+
 /// Try to resolve an icon theme entry for the requesting executable's
-/// basename (e.g. `/usr/bin/firefox` → `firefox`). Returns `None` when
-/// the theme has no match — caller renders no icon in that case rather
-/// than a generic placeholder.
+/// basename (e.g. `/usr/bin/firefox` → `firefox`). On miss, falls
+/// back to a generic shield icon (`system-lock-screen`) — UAC-style,
+/// gives the user a visual anchor that this is a privilege prompt
+/// even when the requesting binary is unknown.
 ///
 /// The lookup is freedesktop-icons-spec via libcosmic's icon theme
 /// machinery, which uses a file-based cache. Done once at app init so
 /// repeated dialog renders don't walk the theme directory.
 fn resolve_process_icon(process_exe: Option<&str>) -> Option<cosmic::widget::icon::Named> {
-    let basename = process_exe.and_then(sentinel_shared::process_basename)?;
-    let named = cosmic::widget::icon::from_name(basename.to_string())
+    if let Some(basename) = process_exe.and_then(sentinel_shared::process_basename) {
+        let named = cosmic::widget::icon::from_name(basename.to_string())
+            .size(48)
+            // Disable Named's default name-truncation fallback (which would
+            // try `firefox-nightly` → `firefox-` → `firefox`). For our use
+            // case "no exact match" should mean "fall back to the generic
+            // shield" — a misleading partial match (e.g. `python3-foo`
+            // falling back to `python3`) is worse than the generic icon.
+            .fallback(None);
+        if named.clone().path().is_some() {
+            return Some(named);
+        }
+    }
+    // Generic fallback shield. Same `fallback(None)` discipline so we
+    // don't accidentally pick up a partial match.
+    let generic = cosmic::widget::icon::from_name(FALLBACK_ICON_NAME.to_string())
         .size(48)
-        // Disable Named's default name-truncation fallback (which would
-        // try `firefox-nightly` → `firefox-` → `firefox`). For our use
-        // case "no exact match" should mean "no icon" — a misleading
-        // partial match (e.g. `python3-foo` falling back to `python3`)
-        // is worse than no icon at all.
         .fallback(None);
-    if named.clone().path().is_some() {
-        Some(named)
+    if generic.clone().path().is_some() {
+        Some(generic)
     } else {
         None
     }

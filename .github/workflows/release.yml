@@ -19,13 +19,19 @@ permissions:
 jobs:
   build:
     name: build (${{ matrix.target }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             arch: x86_64
             deb-arch: amd64
+            runs-on: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+            deb-arch: arm64
+            runs-on: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v6
@@ -86,6 +92,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Verify release-notes file exists
+        # Fail fast if the release-notes/v$VERSION.md is missing — gh
+        # release create with --notes-file would otherwise error out
+        # AFTER tagging and uploading artefacts, leaving us with a
+        # half-published release.
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if [ ! -f ".github/release-notes/v$v.md" ]; then
+            echo "::error::missing .github/release-notes/v$v.md — create it before tagging" >&2
+            exit 1
+          fi
 
       - name: Download artefacts
         uses: actions/download-artifact@v8

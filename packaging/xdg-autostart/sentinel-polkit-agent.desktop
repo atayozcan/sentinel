@@ -13,8 +13,16 @@ X-GNOME-Autostart-Phase=Initialization
 # the session the caller is in differs". By skipping the systemd wrapper
 # we let cosmic-session / Hyprland / Sway autostart spawn the agent as a
 # direct child of the compositor, inheriting the graphical sessionid.
+#
+# `X-GNOME-Autostart-enabled=false` and `X-systemd-skip=true` together
+# cover both old and new versions of the systemd generator — the former
+# is the GNOME-style key the generator has long honoured; the latter is
+# the documented systemd-native mechanism.
 X-GNOME-Autostart-enabled=false
-# polkit only allows ONE agent per session. Restrict to compositors that
-# don't already ship their own agent.
-OnlyShowIn=COSMIC;Hyprland;sway;Wayfire;wlroots;
-NotShowIn=GNOME;KDE;XFCE;LXDE;Cinnamon;MATE;LXQt;
+X-systemd-skip=true
+# Polkit only allows ONE agent per session — exclude desktops that
+# already ship their own. Everything else (cosmic-comp, Hyprland, sway,
+# Niri, River, Wayfire, …) gets the agent autostarted; new wlroots-style
+# compositors are picked up automatically without needing to be added
+# to a positive allowlist.
+NotShowIn=GNOME;KDE;XFCE;LXDE;Cinnamon;MATE;LXQt;Pantheon;Budgie;

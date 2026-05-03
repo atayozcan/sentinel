@@ -16,6 +16,11 @@ fi
 
 ARCH="$(uname -m)"
 DIST=dist
+# Belt-and-braces: the `rm -rf "$DIST"` below would do something nasty
+# if DIST ever resolved to empty / root / `.` due to a refactor. The
+# `:?` parameter expansion bails with an error message if DIST is
+# unset OR empty, so the rm only runs against a real path.
+: "${DIST:?DIST must be set to a non-empty relative path}"
 SRC_TAR="$DIST/sentinel-$VERSION.tar.gz"
 BIN_TAR="$DIST/sentinel-$VERSION-$ARCH-linux.tar.gz"
 

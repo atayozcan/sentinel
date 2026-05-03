@@ -17,13 +17,23 @@ pub fn play_named(name: &str) {
         return;
     }
     // canberra-gtk-play handles the freedesktop sound naming spec
-    // lookup: theme cascade, fallback names, format selection. We
-    // don't link libcanberra ourselves to keep the helper's C
-    // dependency surface small.
-    let _ = std::process::Command::new("canberra-gtk-play")
+    // lookup: theme cascade, parent-theme fallback, format selection.
+    // We pass just the configured name and let libcanberra walk the
+    // theme cascade — passing multiple `-i` flags would NOT chain
+    // (GLib's option parser keeps the last value), it'd override.
+    let child = std::process::Command::new("canberra-gtk-play")
         .args(["-i", name])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
+    // Reap the child in a fire-and-forget thread so it doesn't linger
+    // as a zombie for the helper's lifetime. The helper itself is
+    // short-lived (one auth attempt) so this is purely cosmetic, but
+    // it keeps `ps` clean during long-running test sessions.
+    if let Ok(mut child) = child {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
 }

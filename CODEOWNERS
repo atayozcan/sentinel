@@ -1,0 +1,25 @@
+# Code ownership.
+#
+# Sentinel is currently a single-maintainer project. This file locks
+# review of every PR to the maintainer; the per-path lines below are
+# redundant given the catch-all but exist so the policy is explicit
+# for sensitive areas (PAM, packaging, CI).
+#
+# When the project grows additional maintainers, replace `* @atayozcan`
+# with team mentions and keep the per-path lines as belt-and-braces
+# for the auth-path-critical files.
+
+# Default owner for every file.
+* @atayozcan
+
+# CI / release pipeline — a misconfigured workflow can leak secrets
+# (AUR SSH key) or publish a broken release.
+/.github/ @atayozcan
+
+# Distribution packaging — wrong assets or maintainer scripts can
+# silently break installs across distros.
+/packaging/ @atayozcan
+
+# PAM module — sits in the auth path; a regression here can lock
+# users out of `sudo`/polkit.
+/crates/pam-sentinel/ @atayozcan

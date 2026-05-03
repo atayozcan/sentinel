@@ -4,16 +4,12 @@ use crate::approval_queue::ApprovalQueue;
 use crate::identity::{self, Identity};
 use crate::session::{self, AuthInputs};
 use log::{error, info, warn};
+use sentinel_shared::POLKIT_PAM_SERVICE;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
 use tokio::task::JoinHandle;
 use zbus::fdo;
-
-/// PAM service name we present to the shared config schema. Polkit's
-/// helper-1 uses this as its PAM service, and it's what an admin sets
-/// `[services.<name>]` overrides under.
-const POLKIT_PAM_SERVICE: &str = "polkit-1";
 
 pub struct Agent {
     own_uid: u32,
@@ -77,6 +73,14 @@ impl Agent {
             }
         };
 
+        // `polkit.subject-pid` is the user-facing process that
+        // requested the action (the GUI app, the user's shell). That's
+        // what we want to surface in the dialog and audit logs.
+        // `polkit.caller-pid` is whichever polkit-mediated tool got
+        // there first (e.g. `pkexec`, GNOME Software's
+        // PackageKit-Authentication helper) — useful as a fallback
+        // when subject-pid isn't present, but its `/proc` info is the
+        // mediator, not the human-facing app.
         let subject_pid = details
             .get("polkit.subject-pid")
             .or_else(|| details.get("polkit.caller-pid"))
@@ -158,6 +162,11 @@ impl Agent {
 
     async fn cancel_authentication(&self, cookie: String) -> fdo::Result<()> {
         info!("CancelAuthentication cookie={}", cookie_prefix(&cookie));
+        // Invalidate any pre-approval queued by `session::run` for the
+        // cookie we're canceling. Otherwise the approval lives on for
+        // up to 1 s and could be claimed by the *next* polkit auth that
+        // races in. See `ApprovalQueue::drain` for the threat model.
+        self.queue.drain().await;
         let mut sessions = self.sessions.lock().await;
         if let Some(handle) = sessions.remove(&cookie) {
             handle.abort();
@@ -166,7 +175,37 @@ impl Agent {
     }
 }
 
-fn cookie_prefix(cookie: &str) -> &str {
-    let n = 8.min(cookie.len());
-    &cookie[..n]
+/// First-8-character prefix for log output. Iterates by `chars()` rather
+/// than byte-slicing so a non-ASCII cookie (polkit emits hex in practice,
+/// but this is defensive) doesn't panic on a UTF-8 boundary mid-multi-byte.
+fn cookie_prefix(cookie: &str) -> String {
+    cookie.chars().take(8).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cookie_prefix_short_cookie() {
+        assert_eq!(cookie_prefix("abc"), "abc");
+    }
+
+    #[test]
+    fn cookie_prefix_truncates_at_8_chars() {
+        assert_eq!(cookie_prefix("0123456789abcdef"), "01234567");
+    }
+
+    #[test]
+    fn cookie_prefix_empty_cookie() {
+        assert_eq!(cookie_prefix(""), "");
+    }
+
+    #[test]
+    fn cookie_prefix_handles_multibyte_at_boundary() {
+        // Each "あ" is 3 UTF-8 bytes. 8 chars = 24 bytes; byte-slicing
+        // at &cookie[..8] would have panicked on a non-char boundary.
+        let cookie = "あいうえおかきくけこ";
+        assert_eq!(cookie_prefix(cookie), "あいうえおかきく");
+    }
 }

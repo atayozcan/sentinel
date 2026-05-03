@@ -2,7 +2,6 @@
 
 dialog-title-default     = 認証が必要です
 dialog-message-default   = アプリケーション「{$process}」が昇格された権限を要求しています。
-dialog-secondary-default = 続行するには「許可」を、キャンセルするには「拒否」をクリックしてください。
 
 button-allow = 許可
 button-deny  = 拒否

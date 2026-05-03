@@ -23,6 +23,5 @@ clap_complete = "4"
 clap_mangen = "0.3"
 nix.workspace = true
 log.workspace = true
-syslog.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true

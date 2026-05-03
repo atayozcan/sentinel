@@ -2,7 +2,6 @@
 
 dialog-title-default     = Kimlik Doğrulama Gerekli
 dialog-message-default   = "{$process}" uygulaması yükseltilmiş yetkiler istiyor.
-dialog-secondary-default = Devam etmek için "İzin Ver", iptal etmek için "Reddet" düğmesine tıklayın.
 
 button-allow = İzin Ver
 button-deny  = Reddet

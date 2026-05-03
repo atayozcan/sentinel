@@ -30,9 +30,18 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+pub mod audit;
+
 /// Compile-time absolute path to the system config file. Set by this
 /// crate's `build.rs` from `$SENTINEL_SYSCONFDIR/security/sentinel.conf`.
 pub const CONFIG_PATH: &str = env!("SENTINEL_CONFIG_PATH");
+
+/// PAM service name polkit's `polkit-agent-helper-1` uses, and the
+/// section the agent looks up (`[services."polkit-1"]`) in
+/// `/etc/security/sentinel.conf`. Shared so the agent's
+/// `BeginAuthentication` handler and `helper_ui::Request::for_action`
+/// can't drift apart.
+pub const POLKIT_PAM_SERVICE: &str = "polkit-1";
 
 /// Filename of the bypass socket the polkit agent binds and the PAM
 /// module connects to. Lives in the user's `XDG_RUNTIME_DIR` (defaults
@@ -361,11 +370,16 @@ pub fn format_message(template: &str, user: &str, service: &str, process: &str) 
 // Default appearance strings, exposed as `pub const` so the helper can
 // detect "this is still the built-in default, translate it" vs "admin
 // customized this, use as-is". If you change a const here, update the
-// matching `dialog-{title,message,secondary}-default` keys in every
+// matching `dialog-{title,message}-default` keys in every
 // `crates/sentinel-helper/locales/<lang>/sentinel-helper.ftl`.
 pub const DEFAULT_TITLE: &str = "Authentication Required";
 pub const DEFAULT_MESSAGE: &str = "The application \"%p\" is requesting elevated privileges.";
-pub const DEFAULT_SECONDARY: &str = "Click \"Allow\" to continue or \"Deny\" to cancel.";
+/// Empty by default. The original 0.5.x default named the buttons
+/// ("Click Allow… or Deny…"), which created a left-button-bias when
+/// `randomize_buttons = true` swapped the order. Admins who want a
+/// hint line can set `secondary = "..."` in `/etc/security/sentinel.conf`;
+/// the helper renders it verbatim and skips the row when empty.
+pub const DEFAULT_SECONDARY: &str = "";
 
 /// Basename of an executable path, suitable for `%p` substitution
 /// in dialog messages and for icon-theme lookup. Returns `None` for

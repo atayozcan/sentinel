@@ -4,7 +4,7 @@
 //! Unlike `pam-sentinel`'s helper.rs, the agent already runs as the
 //! requesting user — no fork/setuid dance needed. Just `tokio::process`.
 
-use sentinel_shared::{Outcome, ServiceConfig, format_message};
+use sentinel_shared::{Outcome, POLKIT_PAM_SERVICE, ServiceConfig, format_message};
 use std::process::Stdio;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -78,10 +78,24 @@ impl Request {
             .and_then(sentinel_shared::process_basename)
             .unwrap_or("unknown");
 
-        const SERVICE: &str = "polkit-1";
-        let title = format_message(&args.cfg.title, args.username, SERVICE, process_name);
-        let body = format_message(&args.cfg.message, args.username, SERVICE, process_name);
-        let secondary = format_message(&args.cfg.secondary, args.username, SERVICE, process_name);
+        let title = format_message(
+            &args.cfg.title,
+            args.username,
+            POLKIT_PAM_SERVICE,
+            process_name,
+        );
+        let body = format_message(
+            &args.cfg.message,
+            args.username,
+            POLKIT_PAM_SERVICE,
+            process_name,
+        );
+        let secondary = format_message(
+            &args.cfg.secondary,
+            args.username,
+            POLKIT_PAM_SERVICE,
+            process_name,
+        );
 
         Self {
             title,

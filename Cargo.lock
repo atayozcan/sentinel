@@ -3576,13 +3576,12 @@ dependencies = [
 
 [[package]]
 name = "pam-sentinel"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "log",
  "nix",
  "pam-bindings",
  "sentinel-shared",
- "syslog",
 ]
 
 [[package]]
@@ -4337,7 +4336,7 @@ checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "sentinel-helper"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4353,7 +4352,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-polkit-agent"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4363,7 +4362,6 @@ dependencies = [
  "nix",
  "sentinel-shared",
  "serde",
- "syslog",
  "thiserror 2.0.18",
  "tokio",
  "zbus",
@@ -4372,10 +4370,11 @@ dependencies = [
 
 [[package]]
 name = "sentinel-shared"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "log",
  "serde",
+ "syslog",
  "toml 1.1.2+spec-1.1.0",
 ]
 

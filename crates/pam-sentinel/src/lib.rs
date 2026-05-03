@@ -24,12 +24,12 @@ use helper::{HelperRequest, run as run_helper};
 use pam::constants::{PamFlag, PamResultCode};
 use pam::module::{PamHandle, PamHooks};
 use proc_info::ProcessInfo;
+use sentinel_shared::audit;
 use sentinel_shared::log_kv::quote as q;
 use sentinel_shared::logfmt_session_for_pid;
 use sentinel_shared::{HeadlessAction, Outcome, ServiceConfig, format_message, load};
 use std::ffi::CStr;
 use std::time::Instant;
-use syslog::{BasicLogger, Facility, Formatter3164};
 
 const MODULE_NAME: &str = "pam_sentinel";
 
@@ -90,14 +90,28 @@ fn pam_service(pamh: &PamHandle) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
-/// Resolve the requesting user's name. Prefers the uid we derived from
-/// `/proc/<ppid>/loginuid`; falls back to whatever PAM has if that uid
-/// has no passwd entry.
+/// Resolve the requesting user's name.
+///
+/// Order of preference:
+/// 1. `pamh.get_user()` — the authoritative answer when PAM has it. In
+///    the polkit-agent-helper-1 path the requesting user is set as
+///    `PAM_USER` even though our `/proc/<ppid>/loginuid` walk would
+///    collapse to root (helper-1's parent is systemd PID 1).
+/// 2. `User::from_uid(uid)` — for the sudo / su path where loginuid
+///    actually points at the human user, this still yields the right
+///    name and is a useful sanity cross-check.
+/// 3. `"unknown"` literal — last-resort placeholder; shouldn't happen
+///    in practice.
 fn resolve_user(pamh: &PamHandle, uid: u32) -> String {
+    if let Ok(name) = pamh.get_user(None) {
+        if !name.is_empty() {
+            return name;
+        }
+    }
     if let Ok(Some(u)) = nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(uid)) {
         return u.name;
     }
-    pamh.get_user(None).ok().unwrap_or_else(|| "unknown".into())
+    "unknown".into()
 }
 
 fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultCode {
@@ -105,6 +119,21 @@ fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultC
     // parent of the privileged binary that dlopened us. That's the
     // env we want for session enrichment.
     let session = logfmt_session_for_pid(unsafe { libc_getppid() });
+
+    // Emit a `auth.headless` discriminator before the action-specific
+    // line so journalctl filters distinguish "we tried to dialog the
+    // user but couldn't find their Wayland display" from "we
+    // successfully dialoged and the user denied". Without this, both
+    // produce `event=auth.deny source=...` and the cause is opaque.
+    if cfg.log_attempts {
+        log::info!(
+            "event=auth.headless reason=no-wayland user={} service={}{}",
+            q(user),
+            q(service),
+            session
+        );
+    }
+
     match cfg.headless_action {
         HeadlessAction::Allow => {
             if cfg.log_attempts {
@@ -210,18 +239,7 @@ fn spawn_dialog(
 fn init_logger() {
     use std::sync::Once;
     static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        let formatter = Formatter3164 {
-            facility: Facility::LOG_AUTH,
-            hostname: None,
-            process: MODULE_NAME.into(),
-            pid: std::process::id(),
-        };
-        if let Ok(logger) = syslog::unix(formatter) {
-            let _ = log::set_boxed_logger(Box::new(BasicLogger::new(logger)));
-            log::set_max_level(log::LevelFilter::Info);
-        }
-    });
+    ONCE.call_once(|| audit::init_syslog(MODULE_NAME, log::LevelFilter::Info));
 }
 
 // -------------- libc shims + caller-uid lookup ----------------------------

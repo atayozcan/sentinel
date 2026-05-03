@@ -32,7 +32,7 @@
 
         sentinel = pkgs.rustPlatform.buildRustPackage {
           pname = "sentinel";
-          version = "0.5.2";
+          version = "0.6.0";
           src = ./.;
 
           cargoLock = {
@@ -47,6 +47,15 @@
           SENTINEL_SYSCONFDIR = "/etc";
           SENTINEL_LIBEXECDIR = "lib";
 
+          # Note: this `postInstall` lays files out FHS-style under
+          # `$out/lib/security/`, `$out/etc/`, etc. — non-standard for
+          # Nix consumers (which expect everything below `$out/bin`,
+          # `$out/lib`, `$out/share`). It mirrors the install paths the
+          # PAM module + polkit agent are baked to expect at build
+          # time (`SENTINEL_PREFIX=/usr`, `SENTINEL_SYSCONFDIR=/etc`).
+          # The NixOS module in `nix/module.nix` reads from this same
+          # layout. If you depend on the package directly, point at
+          # `${pkg}/lib/...` rather than `${pkg}/bin/...`.
           postInstall = ''
             install -Dm755 target/release/libpam_sentinel.so \
               $out/lib/security/pam_sentinel.so

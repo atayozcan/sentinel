@@ -155,3 +155,80 @@ jobs:
         #   Drop this when libcosmic ships a wgpu version whose
         #   transitive deps no longer include `paste`.
         run: cargo audit --deny warnings --ignore RUSTSEC-2024-0436
+
+  # ---------------------------------------------------------------------------
+  # `cargo deny` — license / source / banned-crate enforcement.
+  # Stricter cousin of `cargo audit`: catches a GPL-incompatible license
+  # sneaking in through a transitive dep, or a crate hosted somewhere
+  # we don't trust. Config lives in `deny.toml` at repo root.
+  # ---------------------------------------------------------------------------
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+
+      - name: cargo deny check
+        run: cargo deny check
+
+  # ---------------------------------------------------------------------------
+  # Package smoke. Catches `cargo deb` / `cargo generate-rpm` metadata
+  # typos at PR time rather than on tag-push (where they block a
+  # release). Reuses the workspace build via cache, so this is fast.
+  # ---------------------------------------------------------------------------
+  package:
+    name: cargo deb + generate-rpm (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpam0g-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            pkg-config
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deb and cargo-generate-rpm
+        run: |
+          cargo install --locked cargo-deb
+          cargo install --locked cargo-generate-rpm
+
+      - name: Build release artefacts
+        run: cargo build --release --workspace --locked
+
+      - name: Generate completions + man pages
+        # cargo-deb / generate-rpm reference these as assets.
+        run: |
+          mkdir -p target/release/share
+          for bin in sentinel-helper sentinel-polkit-agent; do
+            target/release/$bin completions bash > target/release/share/$bin.bash
+            target/release/$bin completions fish > target/release/share/$bin.fish
+            target/release/$bin completions zsh  > target/release/share/_$bin
+            target/release/$bin man              > target/release/share/$bin.1
+          done
+
+      - name: cargo deb (no rebuild)
+        run: cargo deb --no-build -p sentinel-helper
+
+      - name: cargo generate-rpm
+        run: cargo generate-rpm -p crates/sentinel-helper

@@ -11,7 +11,7 @@ mod subject;
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use log::{info, warn};
-use syslog::{BasicLogger, Facility, Formatter3164};
+use sentinel_shared::audit;
 use zbus::Connection;
 
 const BIN: &str = "sentinel-polkit-agent";
@@ -48,20 +48,14 @@ enum GenSubcommand {
 }
 
 fn init_logger(debug: bool) {
-    let formatter = Formatter3164 {
-        facility: Facility::LOG_AUTH,
-        hostname: None,
-        process: "sentinel-polkit-agent".into(),
-        pid: std::process::id(),
-    };
-    if let Ok(logger) = syslog::unix(formatter) {
-        let _ = log::set_boxed_logger(Box::new(BasicLogger::new(logger)));
-        log::set_max_level(if debug {
+    audit::init_syslog(
+        BIN,
+        if debug {
             log::LevelFilter::Debug
         } else {
             log::LevelFilter::Info
-        });
-    }
+        },
+    );
 }
 
 fn main() -> Result<()> {
@@ -151,15 +145,7 @@ async fn run(args: Args) -> Result<()> {
                 break;
             }
             Err(e) => {
-                // zbus::Error::MethodError's Display only prints the
-                // D-Bus error name (e.g. `org.freedesktop.PolicyKit1.
-                // Error.Failed`) without the description; Debug
-                // includes both. We want the description because
-                // "already exists" is what discriminates the
-                // race-with-another-agent case from genuine errors.
-                let err_dbg = format!("{e:?}");
-                let is_already_exists = err_dbg.contains("already exists");
-                if !is_already_exists {
+                if !is_agent_already_registered(&e) {
                     // Different error — propagate immediately, no retry
                     // (typos in the object path, polkitd not running,
                     // session id mismatch, etc. — none of these
@@ -203,4 +189,26 @@ async fn run(args: Args) -> Result<()> {
 
     info!("shutdown complete");
     Ok(())
+}
+
+/// Discriminate "polkitd already has an agent registered" from genuine
+/// registration errors. Polkit returns
+/// `org.freedesktop.PolicyKit1.Error.Failed` with description
+/// containing `already exists` when the session already has an agent;
+/// any other error name (object-path typo, dbus daemon down, session
+/// mismatch) is non-recoverable and shouldn't be retried.
+///
+/// Done as a structured match on `zbus::Error::MethodError` rather than
+/// substring-matching the `Debug` rendering — far less likely to break
+/// when zbus or polkitd reword their messages.
+fn is_agent_already_registered(e: &zbus::Error) -> bool {
+    match e {
+        zbus::Error::MethodError(name, detail, _) => {
+            name.as_str().ends_with(".Error.Failed")
+                && detail
+                    .as_deref()
+                    .is_some_and(|d| d.contains("already exists"))
+        }
+        _ => false,
+    }
 }

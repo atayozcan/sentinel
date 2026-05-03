@@ -1,0 +1,82 @@
+# cargo-deny configuration.
+#
+# Run locally with `cargo deny check` (install: `cargo install --locked
+# cargo-deny`). CI runs the same command on every PR — see
+# `.github/workflows/ci.yml`.
+#
+# Sentinel's own license is GPL-3.0-or-later; this config allows
+# transitive dependencies under any standard FOSS license that's
+# compatible with that, plus the libcosmic git source we pin in
+# `crates/sentinel-helper/Cargo.toml`.
+
+[graph]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# ----------------------------------------------------------------------
+# Advisories — overlap with `cargo audit` is intentional. cargo-deny
+# checks the same RustSec database; keeping the ignore list mirrored
+# here means a single source of truth for "we know about this and
+# accept the risk".
+# ----------------------------------------------------------------------
+[advisories]
+yanked = "deny"
+ignore = [
+    # `paste 1.0.15` is unmaintained. Pulled in transitively via
+    # libcosmic → iced_wgpu → wgpu → wgpu-hal → metal (Apple Metal
+    # backend). Sentinel is Linux-only and never executes the metal
+    # code path. Drop when libcosmic's wgpu chain no longer pulls
+    # `paste`.
+    "RUSTSEC-2024-0436",
+]
+
+# ----------------------------------------------------------------------
+# Licenses — standard FOSS allowlist. Anything outside this list will
+# fail CI; either add it here (with a justification comment) or replace
+# the dependency.
+# ----------------------------------------------------------------------
+[licenses]
+allow = [
+    "GPL-3.0-or-later",
+    "GPL-3.0",
+    "LGPL-3.0-or-later",
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unlicense",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "OFL-1.1",
+    "BSL-1.0",
+    "0BSD",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+# ----------------------------------------------------------------------
+# Bans — currently no banned crates. Use this section to block a
+# specific dep (e.g. `openssl-sys` if we wanted to enforce rustls only).
+# ----------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+
+# ----------------------------------------------------------------------
+# Sources — only crates.io and the libcosmic git pin.
+# ----------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = [
+    "https://github.com/pop-os/libcosmic",
+    "https://github.com/pop-os/libcosmic.git",
+]

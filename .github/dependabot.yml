@@ -33,9 +33,6 @@ updates:
         update-types:
           - patch
           - minor
-        # Don't group security updates — those should be visible PRs.
-        exclude-patterns:
-          - "*security*"
 
   # ---------------------------------------------------------------------------
   # GitHub Actions referenced in .github/workflows/*.yml

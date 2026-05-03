@@ -68,7 +68,24 @@ Dialog title. Default: "Authentication Required". No substitutions.
 Primary dialog message. Substitutions allowed (see TOKENS below).
 .TP
 .B secondary = string
-Secondary text below the message. Substitutions allowed.
+Optional hint line shown below the message. Empty by default
+(naming the buttons in the secondary text broke under
+.B randomize_buttons
+in 0.5.x). Substitutions allowed; rendered verbatim, no localization.
+
+.SH [audio]
+UAC-style audio cue played when the dialog appears.
+.TP
+.B sound_name = string
+Freedesktop sound-naming-spec name (NOT a file path). Resolved through
+.BR canberra-gtk-play (1)
+if installed; silent fallback if not. Common values:
+.BR dialog-warning ,
+.BR bell ,
+.BR message ,
+.BR dialog-question .
+Default: "dialog-warning". Set to "" to disable.
+See <https://specifications.freedesktop.org/sound-naming-spec/>.
 
 .SH [services.<name>]
 Per-PAM-service overrides. Any key from

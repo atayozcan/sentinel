@@ -52,14 +52,19 @@ stop_polkit_agent() {
         warn "Could not identify invoking user; skipping agent stop."
         return 0
     fi
-    if pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1; then
+    # `pkill -fx <abs-path>` — exact match against full cmdline. Plain
+    # `-x` would match against truncated /proc/<pid>/comm (15 chars);
+    # plain `-f` would also match the calling shell (whose cmdline
+    # contains this script's argv). See install.sh for the rationale.
+    local agent_bin="$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
+    if pgrep -u "$uid" -fx -- "$agent_bin" >/dev/null 2>&1; then
         step "Stopping running polkit agent…"
-        pkill -TERM -u "$uid" -f sentinel-polkit-agent 2>/dev/null || true
+        pkill -TERM -u "$uid" -fx -- "$agent_bin" 2>/dev/null || true
         for _ in 1 2 3 4 5; do
             sleep 0.2
-            pgrep -u "$uid" -f sentinel-polkit-agent >/dev/null 2>&1 || break
+            pgrep -u "$uid" -fx -- "$agent_bin" >/dev/null 2>&1 || break
         done
-        pkill -KILL -u "$uid" -f sentinel-polkit-agent 2>/dev/null || true
+        pkill -KILL -u "$uid" -fx -- "$agent_bin" 2>/dev/null || true
     fi
     rm -f -- "/run/user/$uid/sentinel-agent.sock"
 }

@@ -2,7 +2,6 @@
 
 dialog-title-default     = Требуется аутентификация
 dialog-message-default   = Приложение «{$process}» запрашивает повышенные привилегии.
-dialog-secondary-default = Нажмите «Разрешить» для продолжения или «Запретить» для отмены.
 
 button-allow = Разрешить
 button-deny  = Запретить

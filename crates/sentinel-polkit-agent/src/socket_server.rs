@@ -22,7 +22,7 @@ use crate::approval_queue::ApprovalQueue;
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
 use sentinel_shared::{bypass_socket_path, procfs};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixListener;
 use tokio::net::UnixStream;
@@ -37,9 +37,22 @@ pub async fn serve(uid: u32, queue: ApprovalQueue) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create runtime dir {}", parent.display()))?;
     }
-    // Unlink any stale socket.
-    if path.exists() {
-        let _ = std::fs::remove_file(&path);
+    // Unlink any stale socket. We only `remove_file` if it really *is*
+    // a socket — refusing to clobber a regular file that someone (or
+    // some misconfigured agent) planted at the same path. If a stray
+    // non-socket exists we let `bind()` fail loudly with a clear
+    // message rather than silently rm-ing it.
+    if let Ok(metadata) = std::fs::symlink_metadata(&path) {
+        if metadata.file_type().is_socket() {
+            let _ = std::fs::remove_file(&path);
+        } else {
+            warn!(
+                "{} exists but is not a socket ({:?}); not unlinking — \
+                 bind will fail and you'll need to investigate manually",
+                path.display(),
+                metadata.file_type()
+            );
+        }
     }
 
     let listener = UnixListener::bind(&path).with_context(|| format!("bind {}", path.display()))?;

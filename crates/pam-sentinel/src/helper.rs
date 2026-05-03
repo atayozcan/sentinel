@@ -12,6 +12,12 @@ use std::os::fd::{AsFd, OwnedFd};
 
 pub const HELPER_PATH: &str = env!("SENTINEL_HELPER_PATH");
 
+/// Grace period (in seconds) added on top of the helper's own auto-deny
+/// timeout when computing the parent's `poll(2)` deadline. The helper
+/// races us to its own timeout; this slack lets the helper's verdict
+/// arrive even if `poll` returns slightly after the helper's clock.
+const HELPER_GRACE_SECS: u32 = 5;
+
 pub struct HelperRequest<'a> {
     pub cfg: &'a ServiceConfig,
     pub user: &'a str,
@@ -147,12 +153,25 @@ fn read_pipe(fd: &OwnedFd, buf: &mut [u8]) -> nix::Result<usize> {
     nix::unistd::read(fd, buf)
 }
 
+/// `timeout = 0` in the config means "no auto-deny — wait for the user
+/// as long as it takes". Mirror that on the parent's `poll(2)` side
+/// with `PollTimeout::NONE`. Otherwise add `HELPER_GRACE_SECS` slack on
+/// top of the helper's own auto-deny so the verdict can arrive even if
+/// the helper's clock ticks slightly after ours.
+fn parent_poll_timeout(timeout_secs: u32) -> PollTimeout {
+    if timeout_secs == 0 {
+        return PollTimeout::NONE;
+    }
+    let timeout_ms = (i32::try_from(timeout_secs).unwrap_or(30)
+        + i32::try_from(HELPER_GRACE_SECS).unwrap_or(5))
+        * 1000;
+    PollTimeout::try_from(timeout_ms).unwrap_or(PollTimeout::MAX)
+}
+
 fn parent_wait(child: Pid, read_fd: OwnedFd, req: &HelperRequest<'_>) -> Result<Outcome, String> {
-    // Helper has its own auto-deny; give it a small grace period.
-    let timeout_ms = (i32::try_from(req.cfg.timeout).unwrap_or(30) + 5) * 1000;
     let mut fds = [PollFd::new(read_fd.as_fd(), PollFlags::POLLIN)];
 
-    let timeout = PollTimeout::try_from(timeout_ms).unwrap_or(PollTimeout::MAX);
+    let timeout = parent_poll_timeout(req.cfg.timeout);
     let n = match poll(&mut fds, timeout) {
         Ok(n) => n,
         Err(e) => {
@@ -168,7 +187,8 @@ fn parent_wait(child: Pid, read_fd: OwnedFd, req: &HelperRequest<'_>) -> Result<
         return Err("helper timeout".into());
     }
 
-    let mut buf = [0u8; 32];
+    // Maximum legitimate output is "TIMEOUT\n" = 8 bytes; 16 leaves 2× margin.
+    let mut buf = [0u8; 16];
     let read_n = match read_pipe(&read_fd, &mut buf) {
         Ok(n) => n,
         Err(Errno::EINTR) => 0,
@@ -194,4 +214,37 @@ fn parent_wait(child: Pid, read_fd: OwnedFd, req: &HelperRequest<'_>) -> Result<
     // unrecognized maps to `Deny` — the PAM caller treats anything
     // other than Allow as `PAM_AUTH_ERR`.
     Ok(s.parse::<Outcome>().unwrap_or(Outcome::Deny))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_zero_yields_none() {
+        // `timeout = 0` (no auto-deny) must NOT cap the parent's poll —
+        // otherwise a long-open dialog gets killed at the grace window.
+        assert_eq!(parent_poll_timeout(0), PollTimeout::NONE);
+    }
+
+    #[test]
+    fn timeout_nonzero_adds_grace() {
+        // 30s timeout + 5s grace = 35_000 ms.
+        let pt = parent_poll_timeout(30);
+        // PollTimeout doesn't expose its inner i32 directly, but
+        // round-tripping through TryFrom gives us the comparison value.
+        assert_eq!(pt, PollTimeout::try_from(35_000).unwrap());
+    }
+
+    #[test]
+    fn timeout_overflow_falls_back_to_default_grace() {
+        // u32::MAX doesn't fit in i32; the `try_from` fallback drops in
+        // the 30s default + 5s grace = 35_000 ms rather than panicking.
+        // (A nonsensical timeout in the config shouldn't crash the
+        // module; quietly using a sane bound is the friendlier failure.)
+        assert_eq!(
+            parent_poll_timeout(u32::MAX),
+            PollTimeout::try_from(35_000).unwrap()
+        );
+    }
 }

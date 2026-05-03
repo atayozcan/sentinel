@@ -2,7 +2,6 @@
 
 dialog-title-default     = 需要身份验证
 dialog-message-default   = 应用程序“{$process}”正在请求提升的权限。
-dialog-secondary-default = 单击“允许”继续，或单击“拒绝”取消。
 
 button-allow = 允许
 button-deny  = 拒绝
