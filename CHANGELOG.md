@@ -8,6 +8,29 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-05-04
+
+Build-pipeline maintenance release. No behaviour or config changes for
+end users; existing `/etc/security/sentinel.conf` and
+`/etc/pam.d/polkit-1` keep working unchanged.
+
+- **Fat LTO** across the workspace shrinks the shipped binaries by
+  **−8.6%** combined (helper −9.3%, agent −6.1%, PAM module −4.8%);
+  ~5 minutes added to release-build wall time, absorbed by CI.
+- **AUR baseline raised to `x86-64-v3`** (Haswell / Zen 1+ — AVX2,
+  BMI1/2, FMA, F16C). Aligns with how ALHP / CachyOS distribute
+  microarch-tuned binaries. The portable `.deb` / `.rpm` and source
+  builds are unchanged.
+- **CI links with mold** (`-C link-arg=-fuse-ld=mold`) on both `ci.yml`
+  and `release.yml`. Faster CI; doesn't affect the produced binary
+  beyond build-id.
+- **Honest tokio cleanup:** `sentinel-polkit-agent` no longer declares
+  the `rt-multi-thread` feature it doesn't use. Workspace feature
+  unification keeps it in the binary today (libcosmic via the helper);
+  becomes a free win the day that changes.
+
+[Full notes](https://github.com/atayozcan/sentinel/releases/tag/v0.8.0)
+
 ## [0.7.0] — 2026-05-04
 
 Bigger release: dialog UX final piece + supply-chain integrity +

@@ -27,12 +27,12 @@ so a `pacman -Rsn sentinel` won't clobber your customisations.
 ## Debian / Ubuntu
 
 ```bash
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.7.0-1_amd64.deb
-sudo apt install ./sentinel_0.7.0-1_amd64.deb
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.8.0-1_amd64.deb
+sudo apt install ./sentinel_0.8.0-1_amd64.deb
 
 # aarch64 (Pi 4/5, Ampere, etc.):
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.7.0-1_arm64.deb
-sudo apt install ./sentinel_0.7.0-1_arm64.deb
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.8.0-1_arm64.deb
+sudo apt install ./sentinel_0.8.0-1_arm64.deb
 ```
 
 After install, the polkit agent autostarts on next graphical login.
@@ -42,8 +42,8 @@ sudo coverage — see [PAM wiring](./pam-wiring.md).
 ## Fedora / openSUSE
 
 ```bash
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.7.0-1.x86_64.rpm
-sudo dnf install ./sentinel-0.7.0-1.x86_64.rpm
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.8.0-1.x86_64.rpm
+sudo dnf install ./sentinel-0.8.0-1.x86_64.rpm
 ```
 
 ## NixOS
@@ -77,9 +77,9 @@ nix run github:atayozcan/sentinel -- --timeout 10 --randomize
 ## Generic binary tarball
 
 ```bash
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.7.0-x86_64-linux.tar.gz
-tar xzf sentinel-0.7.0-x86_64-linux.tar.gz
-cd sentinel-0.7.0
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.8.0-x86_64-linux.tar.gz
+tar xzf sentinel-0.8.0-x86_64-linux.tar.gz
+cd sentinel-0.8.0
 sudo ./install.sh
 ```
 
@@ -113,7 +113,7 @@ Every artifact is signed by Sigstore via GitHub's artifact
 attestations:
 
 ```bash
-gh attestation verify sentinel_0.7.0-1_amd64.deb \
+gh attestation verify sentinel_0.8.0-1_amd64.deb \
     --repo atayozcan/sentinel
 ```
 

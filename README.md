@@ -49,12 +49,12 @@ preserved as historical reference until v1.0; new content lives in
 yay -S sentinel
 
 # Debian / Ubuntu
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.7.0-1_amd64.deb
-sudo apt install ./sentinel_0.7.0-1_amd64.deb
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel_0.8.0-1_amd64.deb
+sudo apt install ./sentinel_0.8.0-1_amd64.deb
 
 # Fedora / openSUSE
-curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.7.0-1.x86_64.rpm
-sudo dnf install ./sentinel-0.7.0-1.x86_64.rpm
+curl -LO https://github.com/atayozcan/sentinel/releases/latest/download/sentinel-0.8.0-1.x86_64.rpm
+sudo dnf install ./sentinel-0.8.0-1.x86_64.rpm
 
 # NixOS — flake at the repo root
 nix run github:atayozcan/sentinel -- --timeout 10 --randomize

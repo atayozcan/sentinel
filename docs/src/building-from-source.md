@@ -69,12 +69,12 @@ clobbering of your real config).
 ## Building distribution packages
 
 ```bash
-./scripts/build-release.sh 0.7.0
+./scripts/build-release.sh 0.8.0
 ```
 
 Produces `dist/`:
-- `sentinel-0.7.0.tar.gz` (source)
-- `sentinel-0.7.0-x86_64-linux.tar.gz` (binary, install layout)
+- `sentinel-0.8.0.tar.gz` (source)
+- `sentinel-0.8.0-x86_64-linux.tar.gz` (binary, install layout)
 - per-arch `.sha256` files
 
 For deb/rpm:

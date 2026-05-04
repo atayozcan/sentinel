@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Maintainer: Atay Özcan <atay@oezcan.me>
 pkgname=sentinel
-pkgver=0.7.0
+pkgver=0.8.0
 pkgrel=1
 install=sentinel.install
 # Cargo.toml's release profile already strips symbols (`strip = "symbols"`),
