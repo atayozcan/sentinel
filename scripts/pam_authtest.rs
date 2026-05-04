@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
 // pam_authtest.rs — minimal pam_authenticate() caller for dev-test.sh.
 //
 // Single-file program; build with:
