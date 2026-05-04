@@ -21,7 +21,7 @@ sentinel-shared = { path = "../sentinel-shared" }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 zvariant = "5"
 serde.workspace = true
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "process", "sync", "io-util", "net", "fs", "time"] }
+tokio = { version = "1", features = ["rt", "macros", "signal", "process", "sync", "io-util", "net", "fs", "time"] }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 clap_mangen = "0.3"
