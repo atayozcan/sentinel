@@ -25,7 +25,7 @@ anyhow = "1"
 thiserror = "2"
 
 [profile.release]
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
