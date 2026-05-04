@@ -55,6 +55,15 @@ build() {
     export SENTINEL_PREFIX=/usr
     export SENTINEL_SYSCONFDIR=/etc
     export SENTINEL_LIBEXECDIR=lib
+    # Microarch baseline: x86-64-v3 (Haswell/Zen 1+ — AVX2, BMI1/2, FMA, F16C).
+    # Arch officially baselined to v2 in 2024 but virtually all hardware
+    # capable of running a modern Wayland compositor is v3+. ALHP /
+    # CachyOS users get a v3-tuned binary; everyone else still on a
+    # pre-Haswell CPU should use the .deb/.rpm or build from source.
+    # Append rather than overwrite so makepkg's CFLAGS-equivalent layer
+    # (if a user sets RUSTFLAGS in /etc/makepkg.conf via cargo-rustflags)
+    # composes cleanly.
+    export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=x86-64-v3"
     cargo build --frozen --release --workspace
 
     # Generate shell completions + man pages from the freshly-built binaries.
