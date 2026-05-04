@@ -20,6 +20,11 @@ env:
   SENTINEL_PREFIX: /usr
   SENTINEL_SYSCONFDIR: /etc
   SENTINEL_LIBEXECDIR: lib
+  # Use mold for faster linking. Doesn't change the produced binary
+  # (only build-id differs); shaves wall-time off the link step,
+  # which fat LTO + codegen-units=1 makes the dominant non-LTO cost.
+  # Each job's apt-get installs mold before cargo runs.
+  RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 # Least-privilege default for every job in this workflow. Individual
 # jobs that need more (e.g. uploading SARIF, writing artefacts beyond
@@ -49,7 +54,8 @@ jobs:
             libwayland-dev \
             libfontconfig1-dev \
             libfreetype6-dev \
-            pkg-config
+            pkg-config \
+            mold
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
@@ -85,7 +91,8 @@ jobs:
             libwayland-dev \
             libfontconfig1-dev \
             libfreetype6-dev \
-            pkg-config
+            pkg-config \
+            mold
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
@@ -120,7 +127,8 @@ jobs:
             libwayland-dev \
             libfontconfig1-dev \
             libfreetype6-dev \
-            pkg-config
+            pkg-config \
+            mold
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
@@ -142,6 +150,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install mold
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mold
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
@@ -175,6 +186,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install mold
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mold
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
@@ -252,7 +266,8 @@ jobs:
             libwayland-dev \
             libfontconfig1-dev \
             libfreetype6-dev \
-            pkg-config
+            pkg-config \
+            mold
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable

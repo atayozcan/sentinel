@@ -20,6 +20,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Use mold for faster linking; doesn't affect the shipped binary
+  # beyond build-id. Each matrix job's apt-get installs mold before
+  # cargo runs. See ci.yml for the same setup on PR builds.
+  RUSTFLAGS: -C link-arg=-fuse-ld=mold
+
 jobs:
   build:
     name: build (${{ matrix.target }})
@@ -57,7 +63,8 @@ jobs:
             libwayland-dev \
             libfontconfig1-dev \
             libfreetype6-dev \
-            pkg-config
+            pkg-config \
+            mold
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
