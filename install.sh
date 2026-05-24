@@ -12,11 +12,24 @@
 # and man pages.
 #
 # Flags:
+#   --kde           Wire the KDE Plasma helper (/usr/bin/sentinel-helper-kde,
+#                   from the sentinel-helper-kde package) into the auth path
+#                   instead of the COSMIC helper, and disable polkit-kde's
+#                   autostart so Sentinel becomes the session's sole polkit
+#                   agent (restored verbatim on uninstall). Default: COSMIC.
 #   --enable-sudo   Also wire pam_sentinel into /etc/pam.d/sudo. Default off.
 #                   (Distribution packages never touch /etc/pam.d/sudo;
 #                   silently rewriting it is a notorious foot-gun.)
+#
+# Env:
+#   SENTINEL_SKIP_BUILD=1   Skip `cargo build`; install the existing
+#                           target/release artifacts (CI / container tests).
 
-set -euo pipefail
+# -E (errtrace): without it the ERR trap is NOT inherited into shell
+# functions, so a failure inside install_file() would exit *without*
+# running the rollback. This is the common failure path, so it must be on.
+set -Eeuo pipefail
+umask 022
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info()  { printf "${GREEN}[INFO]${NC} %s\n" "$*"; }
@@ -42,9 +55,11 @@ INSTALL_OK=0
 # -------------- argv -------------------------------------------------------
 
 INSTALL_SUDO=0
+HELPER_VARIANT=cosmic
 for arg in "$@"; do
     case "$arg" in
         --enable-sudo) INSTALL_SUDO=1 ;;
+        --kde) HELPER_VARIANT=kde ;;
         --help|-h)
             sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
             exit 0
@@ -52,6 +67,27 @@ for arg in "$@"; do
         *) error "Unknown flag: $arg (try --help)" ;;
     esac
 done
+
+# Resolve the helper variant: which confirmation-dialog binary the PAM
+# module and polkit agent spawn, and the install-time differences it
+# implies (whether we build/install a helper here, and whether we make
+# Sentinel the sole polkit agent by disabling polkit-kde).
+POLKIT_KDE_DISABLED=""
+case "$HELPER_VARIANT" in
+    kde)
+        # Shipped by the `sentinel-helper-kde` package (qrc-embedded QML);
+        # not built or installed by this script.
+        HELPER_PATH="/usr/bin/sentinel-helper-kde"
+        BUILD_HELPER=0
+        DISABLE_POLKIT_KDE=1
+        ;;
+    cosmic)
+        HELPER_PATH="$PREFIX/$LIBEXECDIR/sentinel-helper"
+        BUILD_HELPER=1
+        DISABLE_POLKIT_KDE=0
+        ;;
+    *) error "Unknown helper variant: $HELPER_VARIANT" ;;
+esac
 
 # Polkit agents that conflict with sentinel-polkit-agent's session
 # registration. Knocked down with SIGTERM by the in-place restart logic
@@ -113,6 +149,35 @@ install_file() {
     install -Dm"$mode" -- "$src" "$dst"
 }
 
+# disable_polkit_kde
+# Reversibly disable polkit-kde's XDG autostart so Sentinel's agent wins the
+# session's single polkit-agent registration. Installs a `Hidden=true` copy
+# over the entry via install_file, so the original is backed up and restored
+# verbatim on uninstall. No-op (with a warning) if no entry is present.
+disable_polkit_kde() {
+    local d found=""
+    shopt -s nullglob
+    for d in "$SYSCONFDIR"/xdg/autostart/*polkit-kde*.desktop; do
+        found="$d"; break
+    done
+    shopt -u nullglob
+    if [[ -z "$found" ]]; then
+        warn "No polkit-kde autostart entry under $SYSCONFDIR/xdg/autostart; nothing to disable."
+        return 0
+    fi
+    step "Disabling polkit-kde autostart ($found)…"
+    local tmp; tmp="$(mktemp)"
+    if grep -q '^Hidden=' "$found"; then
+        sed 's/^Hidden=.*/Hidden=true/' "$found" > "$tmp"
+    else
+        cp -- "$found" "$tmp"
+        printf 'Hidden=true\n' >> "$tmp"
+    fi
+    install_file 644 "$tmp" "$found"
+    rm -f -- "$tmp"
+    POLKIT_KDE_DISABLED="$found"
+}
+
 # -------------- build (as the invoking user, not root) ---------------------
 
 # When invoked via pkexec / sudo, build as the original user so cargo's
@@ -124,32 +189,49 @@ elif [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
     BUILD_USER="$SUDO_USER"
 fi
 
-step "Building (cargo --release)${BUILD_USER:+ as $BUILD_USER}…"
-build_cmd=(env
-    SENTINEL_PREFIX="$PREFIX"
-    SENTINEL_SYSCONFDIR="$SYSCONFDIR"
-    SENTINEL_LIBEXECDIR="$LIBEXECDIR"
-    cargo build --release --workspace --locked)
+# Build only the auth-path components. The KDE helper lives in its own
+# package (and needs the Qt toolchain), so we never build the whole
+# workspace; the COSMIC helper is added only for that variant.
+BUILD_CRATES=(-p pam-sentinel -p sentinel-polkit-agent)
+[[ $BUILD_HELPER -eq 1 ]] && BUILD_CRATES+=(-p sentinel-helper)
 
-if [[ -n "$BUILD_USER" ]] && command -v runuser >/dev/null 2>&1; then
-    runuser -u "$BUILD_USER" -- "${build_cmd[@]}"
+if [[ "${SENTINEL_SKIP_BUILD:-0}" == "1" ]]; then
+    warn "SENTINEL_SKIP_BUILD=1 — skipping cargo build; using existing target/release artifacts."
 else
-    "${build_cmd[@]}"
+    step "Building (cargo --release)${BUILD_USER:+ as $BUILD_USER}…"
+    build_cmd=(env
+        SENTINEL_PREFIX="$PREFIX"
+        SENTINEL_SYSCONFDIR="$SYSCONFDIR"
+        SENTINEL_LIBEXECDIR="$LIBEXECDIR"
+        SENTINEL_HELPER_PATH="$HELPER_PATH"
+        cargo build --release --locked "${BUILD_CRATES[@]}")
+
+    if [[ -n "$BUILD_USER" ]] && command -v runuser >/dev/null 2>&1; then
+        runuser -u "$BUILD_USER" -- "${build_cmd[@]}"
+    else
+        "${build_cmd[@]}"
+    fi
 fi
 
-[[ -f target/release/sentinel-helper       ]] || error "Build artifact missing: target/release/sentinel-helper"
-[[ -f target/release/sentinel-polkit-agent ]] || error "Build artifact missing: target/release/sentinel-polkit-agent"
 [[ -f target/release/libpam_sentinel.so    ]] || error "Build artifact missing: target/release/libpam_sentinel.so"
+[[ -f target/release/sentinel-polkit-agent ]] || error "Build artifact missing: target/release/sentinel-polkit-agent"
+if [[ $BUILD_HELPER -eq 1 ]]; then
+    [[ -f target/release/sentinel-helper ]] || error "Build artifact missing: target/release/sentinel-helper"
+else
+    [[ -x "$HELPER_PATH" ]] || error "KDE helper not found at $HELPER_PATH — install the sentinel-helper-kde package first."
+fi
 
 # -------------- install ----------------------------------------------------
 
 mkdir -p "$STATE_DIR"
-printf 'VERSION\t%s\t\n' "$(awk -F'"' '/^version/{print $2; exit}' Cargo.toml)" >> "$STATE_TMP"
+# Read the workspace version with sed (no awk dependency).
+printf 'VERSION\t%s\t\n' "$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -1)" >> "$STATE_TMP"
 
 step "Installing system files…"
 
-# Binaries.
-install_file 755 target/release/sentinel-helper       "$PREFIX/$LIBEXECDIR/sentinel-helper"
+# Binaries. The KDE helper ships in its own package; only the COSMIC
+# helper is installed from the build tree.
+[[ $BUILD_HELPER -eq 1 ]] && install_file 755 target/release/sentinel-helper "$PREFIX/$LIBEXECDIR/sentinel-helper"
 install_file 755 target/release/sentinel-polkit-agent "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
 
 # pam_sentinel.so requires the execute bit (0755) — under
@@ -178,27 +260,40 @@ if [[ $INSTALL_SUDO -eq 1 ]]; then
     install_file 644 config/sudo                       "$SYSCONFDIR/pam.d/sudo"
 fi
 
+# KDE: become the session's sole polkit agent (reversible; restored on uninstall).
+if [[ $DISABLE_POLKIT_KDE -eq 1 ]]; then
+    disable_polkit_kde
+fi
+
 # -------------- shell completions + man pages -----------------------------
 
 step "Generating shell completions and man pages…"
 GEN_DIR="$(mktemp -d)"
-target/release/sentinel-helper       completions bash > "$GEN_DIR/sentinel-helper.bash"
-target/release/sentinel-helper       completions fish > "$GEN_DIR/sentinel-helper.fish"
-target/release/sentinel-helper       completions zsh  > "$GEN_DIR/_sentinel-helper"
+
+# Agent completions + man are always shipped.
 target/release/sentinel-polkit-agent completions bash > "$GEN_DIR/sentinel-polkit-agent.bash"
 target/release/sentinel-polkit-agent completions fish > "$GEN_DIR/sentinel-polkit-agent.fish"
 target/release/sentinel-polkit-agent completions zsh  > "$GEN_DIR/_sentinel-polkit-agent"
-target/release/sentinel-helper       man              > "$GEN_DIR/sentinel-helper.1"
 target/release/sentinel-polkit-agent man              > "$GEN_DIR/sentinel-polkit-agent.1"
 
-install_file 644 "$GEN_DIR/sentinel-helper.bash"        "$PREFIX/share/bash-completion/completions/sentinel-helper"
 install_file 644 "$GEN_DIR/sentinel-polkit-agent.bash"  "$PREFIX/share/bash-completion/completions/sentinel-polkit-agent"
-install_file 644 "$GEN_DIR/sentinel-helper.fish"        "$PREFIX/share/fish/vendor_completions.d/sentinel-helper.fish"
 install_file 644 "$GEN_DIR/sentinel-polkit-agent.fish"  "$PREFIX/share/fish/vendor_completions.d/sentinel-polkit-agent.fish"
-install_file 644 "$GEN_DIR/_sentinel-helper"            "$PREFIX/share/zsh/site-functions/_sentinel-helper"
 install_file 644 "$GEN_DIR/_sentinel-polkit-agent"      "$PREFIX/share/zsh/site-functions/_sentinel-polkit-agent"
-install_file 644 "$GEN_DIR/sentinel-helper.1"           "$PREFIX/share/man/man1/sentinel-helper.1"
 install_file 644 "$GEN_DIR/sentinel-polkit-agent.1"     "$PREFIX/share/man/man1/sentinel-polkit-agent.1"
+
+# The COSMIC helper ships completions + a man page. The KDE helper is a
+# pure dialog with no `completions`/`man` subcommand, so skip it there.
+if [[ $BUILD_HELPER -eq 1 ]]; then
+    target/release/sentinel-helper completions bash > "$GEN_DIR/sentinel-helper.bash"
+    target/release/sentinel-helper completions fish > "$GEN_DIR/sentinel-helper.fish"
+    target/release/sentinel-helper completions zsh  > "$GEN_DIR/_sentinel-helper"
+    target/release/sentinel-helper man              > "$GEN_DIR/sentinel-helper.1"
+    install_file 644 "$GEN_DIR/sentinel-helper.bash"     "$PREFIX/share/bash-completion/completions/sentinel-helper"
+    install_file 644 "$GEN_DIR/sentinel-helper.fish"     "$PREFIX/share/fish/vendor_completions.d/sentinel-helper.fish"
+    install_file 644 "$GEN_DIR/_sentinel-helper"         "$PREFIX/share/zsh/site-functions/_sentinel-helper"
+    install_file 644 "$GEN_DIR/sentinel-helper.1"        "$PREFIX/share/man/man1/sentinel-helper.1"
+fi
+
 install_file 644 packaging/man/sentinel.conf.5          "$PREFIX/share/man/man5/sentinel.conf.5"
 install_file 644 packaging/man/pam_sentinel.8           "$PREFIX/share/man/man8/pam_sentinel.8"
 
@@ -221,21 +316,32 @@ verify() {
     owner="$(stat -c '%u:%g' "$path" 2>/dev/null || echo "?:?")"
     [[ "$owner" == "0:0" ]] || error "Wrong ownership on $path: got $owner, expected 0:0 (root:root)"
 }
-verify "$PREFIX/$LIBEXECDIR/sentinel-helper"            755 exe
+if [[ $BUILD_HELPER -eq 1 ]]; then
+    verify "$PREFIX/$LIBEXECDIR/sentinel-helper"        755 exe
+else
+    [[ -x "$HELPER_PATH" ]] || error "KDE helper missing or not executable: $HELPER_PATH"
+fi
 verify "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"      755 exe
 verify "$PREFIX/lib/security/pam_sentinel.so"           755 regular
 verify "$SYSCONFDIR/security/sentinel.conf"             644 regular
 verify "$SYSCONFDIR/pam.d/polkit-1"                     644 regular
 verify "$SYSCONFDIR/xdg/autostart/sentinel-polkit-agent.desktop" 644 regular
 verify "$SYSCONFDIR/systemd/system/polkit-agent-helper@.service.d/sentinel.conf" 644 regular
-verify "$PREFIX/share/man/man1/sentinel-helper.1"               644 regular
+[[ $BUILD_HELPER -eq 1 ]] && verify "$PREFIX/share/man/man1/sentinel-helper.1" 644 regular
 verify "$PREFIX/share/man/man1/sentinel-polkit-agent.1"         644 regular
 verify "$PREFIX/share/man/man5/sentinel.conf.5"                 644 regular
 verify "$PREFIX/share/man/man8/pam_sentinel.8"                  644 regular
-verify "$PREFIX/share/bash-completion/completions/sentinel-helper"       644 regular
-verify "$PREFIX/share/zsh/site-functions/_sentinel-helper"               644 regular
-verify "$PREFIX/share/fish/vendor_completions.d/sentinel-helper.fish"    644 regular
+if [[ $BUILD_HELPER -eq 1 ]]; then
+    verify "$PREFIX/share/bash-completion/completions/sentinel-helper"    644 regular
+    verify "$PREFIX/share/zsh/site-functions/_sentinel-helper"            644 regular
+    verify "$PREFIX/share/fish/vendor_completions.d/sentinel-helper.fish" 644 regular
+fi
 [[ $INSTALL_SUDO -eq 1 ]] && verify "$SYSCONFDIR/pam.d/sudo" 644 regular
+# KDE: confirm polkit-kde autostart is actually disabled now.
+if [[ -n "$POLKIT_KDE_DISABLED" ]]; then
+    grep -q '^Hidden=true' "$POLKIT_KDE_DISABLED" \
+        || error "Failed to disable polkit-kde autostart at $POLKIT_KDE_DISABLED"
+fi
 
 # Reload systemd so the drop-in is picked up before the next
 # polkit-agent-helper@ instance starts.
@@ -444,15 +550,17 @@ restart_polkit_agent() {
 }
 
 AGENT_RESTARTED=0
-restart_polkit_agent
+# Best-effort and runs *after* the install is committed; never let a hiccup
+# in here (now that errtrace is on) report a false install failure.
+restart_polkit_agent || true
 
 info "Installation complete."
 cat <<EOF
 
 Installed:
   $PREFIX/lib/security/pam_sentinel.so
-  $PREFIX/$LIBEXECDIR/sentinel-helper
   $PREFIX/$LIBEXECDIR/sentinel-polkit-agent
+  helper: $HELPER_PATH$([[ $BUILD_HELPER -eq 0 ]] && printf ' (from sentinel-helper-kde package)')$([[ -n "$POLKIT_KDE_DISABLED" ]] && printf '\n  polkit-kde autostart disabled (restored on uninstall): %s' "$POLKIT_KDE_DISABLED")
   $SYSCONFDIR/security/sentinel.conf
   $SYSCONFDIR/pam.d/polkit-1
   $SYSCONFDIR/xdg/autostart/sentinel-polkit-agent.desktop

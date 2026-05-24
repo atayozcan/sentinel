@@ -113,6 +113,10 @@ if [[ -f "$STATE_FILE" ]]; then
     else
         info "Sentinel uninstalled cleanly."
     fi
+    warn "Sentinel's polkit agent was stopped. If your desktop's own agent"
+    warn "(e.g. polkit-kde) was disabled at install, it is re-enabled now but"
+    warn "only starts at the next login — log out and back in to restore it."
+    warn "'sudo' is unaffected and works in the meantime."
     exit 0
 fi
 
@@ -157,5 +161,14 @@ if [[ -f "$SYSCONFDIR/pam.d/sudo.pre-sentinel.bak" ]]; then
         && info "Restored $SYSCONFDIR/pam.d/sudo from backup"
 fi
 
+# KDE: re-enable any polkit-kde autostart we disabled (restore its backup).
+shopt -s nullglob
+for bak in "$SYSCONFDIR"/xdg/autostart/*polkit-kde*.desktop.pre-sentinel.bak; do
+    mv -f -- "$bak" "${bak%.pre-sentinel.bak}" \
+        && info "Re-enabled polkit-kde autostart: ${bak%.pre-sentinel.bak}"
+done
+shopt -u nullglob
+
 systemctl daemon-reload 2>/dev/null || true
 info "Sentinel uninstalled (fallback mode)."
+warn "If a desktop polkit agent was disabled, log out and back in to restore it."
