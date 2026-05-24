@@ -103,7 +103,9 @@ async fn run(args: Args) -> Result<()> {
     conn.object_server()
         .at(
             sentinel_shared::AGENT_OBJECT_PATH,
-            bypass_service::BypassService { queue: bypass_queue },
+            bypass_service::BypassService {
+                queue: bypass_queue,
+            },
         )
         .await
         .context("publish bypass service")?;

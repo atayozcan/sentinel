@@ -126,7 +126,10 @@ fn play_sound(name: &str) {
     for (player, args) in [
         ("pw-play", &[file.as_str()][..]),
         ("paplay", &[file.as_str()][..]),
-        ("ffplay", &["-nodisp", "-autoexit", "-loglevel", "quiet", file.as_str()][..]),
+        (
+            "ffplay",
+            &["-nodisp", "-autoexit", "-loglevel", "quiet", file.as_str()][..],
+        ),
         ("aplay", &["-q", file.as_str()][..]),
     ] {
         if spawn_detached(player, args) {
@@ -140,7 +143,9 @@ fn play_sound(name: &str) {
 /// Oxygen themes — `dialog-warning.oga` ships with both KDE and GNOME.
 fn resolve_sound_file(name: &str) -> Option<String> {
     if name.starts_with('/') {
-        return std::path::Path::new(name).is_file().then(|| name.to_string());
+        return std::path::Path::new(name)
+            .is_file()
+            .then(|| name.to_string());
     }
     const DIRS: &[&str] = &[
         "/usr/share/sounds/freedesktop/stereo",

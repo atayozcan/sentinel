@@ -1,5 +1,6 @@
 # Sentinel-KDE
 
+[![CI](https://github.com/atayozcan/sentinel-kde/actions/workflows/ci.yml/badge.svg)](https://github.com/atayozcan/sentinel-kde/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-blue.svg)](rust-toolchain.toml)
 

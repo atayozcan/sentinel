@@ -40,3 +40,10 @@ path = ["**/*.md", "**/*.toml", "**/*.yml", "**/*.yaml", "**/*.json"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Documentation screenshots (captured from the app's own UI).
+[[annotations]]
+path = ["docs/src/screenshots/*.png"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
+SPDX-License-Identifier = "GPL-3.0-or-later"

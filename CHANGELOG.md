@@ -1,12 +1,37 @@
 # Changelog
 
-All notable changes per release. Detailed prose for each version lives
-in `.github/release-notes/v*.md` and is mirrored on the GitHub
-[Releases](https://github.com/atayozcan/sentinel/releases) page.
+All notable changes, mirrored on the GitHub
+[Releases](https://github.com/atayozcan/sentinel-kde/releases) page. The format
+loosely follows [Keep a Changelog](https://keepachangelog.com/), with version
+numbers following [Semantic Versioning](https://semver.org/).
 
-The format loosely follows
-[Keep a Changelog](https://keepachangelog.com/), with version numbers
-following [Semantic Versioning](https://semver.org/).
+## Unreleased — Sentinel-KDE (fork)
+
+Sentinel-KDE is the KDE Plasma-native fork of
+[`sentinel`](https://github.com/atayozcan/sentinel) (COSMIC). The
+COSMIC/libcosmic helper is dropped; KDE Plasma is the only target.
+
+- **KDE-native helper** (`sentinel-helper-kde`): Rust + cxx-qt + Kirigami/Breeze,
+  layer-shell overlay, qrc-embedded QML, plain-text/clipped untrusted strings.
+- **Bypass over the system D-Bus** (`org.sentinel.Agent`) instead of a unix
+  socket — works under **enforcing SELinux** with no custom policy module (it
+  rides the `policykit_t → userdomain dbus` allow, like `pam_fprintd`) and no
+  `polkit.service` sandbox override. Owner-uid verified (anti-squat).
+- **Agent runs as a systemd user service** (required for clean registration on
+  Plasma 6); masks `plasma-polkit-agent.service`; polkit admin rule makes the
+  user a polkit administrator.
+- **Prepend-in-place PAM wiring**: detects the real module dir
+  (`/usr/lib64/security`) and prepends onto the distro's own polkit-1 / sudo /
+  sudo-i / su stacks, preserving the real `common-auth` fallback and `su`'s
+  `pam_rootok`.
+- **sudo / sudo -i / su guarded by default** (`--no-sudo` to opt out); installer
+  reuses prebuilt artifacts by default (`--rebuild` to force).
+- Robust audio cue (canberra → `pw-play`/`paplay` fallback); CI, mdBook docs +
+  screenshots, and community-health files.
+
+---
+
+The entries below are inherited from the upstream COSMIC project.
 
 ## [0.8.0] — 2026-05-04
 

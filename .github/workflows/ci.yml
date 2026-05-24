@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The security-critical Rust (PAM module, polkit agent, shared lib) — no Qt,
+  # so this is fast and deterministic. fmt is run over the whole workspace.
+  core:
+    name: fmt · clippy · test (core)
+    runs-on: ubuntu-latest
+    container: registry.opensuse.org/opensuse/tumbleweed:latest
+    steps:
+      - name: Install toolchain + deps
+        run: zypper -n install --no-recommends git tar gzip gcc rust cargo pam-devel
+      - uses: actions/checkout@v4
+      - run: rustc --version && cargo --version
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: >
+          cargo clippy --locked --all-targets
+          -p sentinel-shared -p pam-sentinel -p sentinel-polkit-agent
+          -- -D warnings
+      - name: test
+        run: >
+          cargo test --locked
+          -p sentinel-shared -p pam-sentinel -p sentinel-polkit-agent
+
+  # The Kirigami helper needs the full Qt 6 + KF 6 stack (cxx-qt pulls Qt
+  # private headers). Best-effort: it reports status without gating the badge —
+  # flip continue-on-error to false once the dependency set is confirmed green.
+  helper:
+    name: build helper (Qt6 / KF6)
+    runs-on: ubuntu-latest
+    container: registry.opensuse.org/opensuse/tumbleweed:latest
+    continue-on-error: true
+    steps:
+      - name: Install toolchain + Qt/KF6 deps
+        run: >
+          zypper -n install --no-recommends git tar gzip gcc gcc-c++ make
+          rust cargo pam-devel
+          qt6-base-devel qt6-base-private-devel
+          qt6-declarative-devel qt6-declarative-private-devel
+          kf6-kirigami-imports kf6-qqc2-desktop-style
+          layer-shell-qt6-imports kf6-breeze-icons qt6-wayland
+      - uses: actions/checkout@v4
+      - name: build sentinel-helper-kde
+        run: cargo build --release --locked -p sentinel-helper-kde
+        env:
+          SENTINEL_HELPER_PATH: /usr/lib/sentinel-helper-kde
+
+  reuse:
+    name: REUSE compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@v5

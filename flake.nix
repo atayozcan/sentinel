@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
 # SPDX-License-Identifier: GPL-3.0-or-later
+#
+# A development shell for hacking on Sentinel-KDE (Rust + cxx-qt + KF6).
+# Sentinel installs via ./install.sh on openSUSE Tumbleweed; a full Nix
+# package of the cxx-qt/Kirigami helper is a TODO (it needs Qt app wrapping).
 {
-  description = "Sentinel — UAC-style PAM confirmation dialog for Linux";
+  description = "Sentinel-KDE — UAC-style PAM + polkit confirmation dialog for KDE Plasma";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -19,109 +23,27 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-
-        commonInputs = with pkgs; [
-          pam
-          wayland
-          libxkbcommon
-          fontconfig
-          freetype
-          mesa
-          vulkan-loader
-        ];
-
-        sentinel = pkgs.rustPlatform.buildRustPackage {
-          pname = "sentinel";
-          version = "0.8.0";
-          src = ./.;
-
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            allowBuiltinFetchGit = true;
-          };
-
-          nativeBuildInputs = with pkgs; [ pkg-config rustToolchain ];
-          buildInputs = commonInputs;
-
-          SENTINEL_PREFIX = "/usr";
-          SENTINEL_SYSCONFDIR = "/etc";
-          SENTINEL_LIBEXECDIR = "lib";
-
-          # Note: this `postInstall` lays files out FHS-style under
-          # `$out/lib/security/`, `$out/etc/`, etc. — non-standard for
-          # Nix consumers (which expect everything below `$out/bin`,
-          # `$out/lib`, `$out/share`). It mirrors the install paths the
-          # PAM module + polkit agent are baked to expect at build
-          # time (`SENTINEL_PREFIX=/usr`, `SENTINEL_SYSCONFDIR=/etc`).
-          # The NixOS module in `nix/module.nix` reads from this same
-          # layout. If you depend on the package directly, point at
-          # `${pkg}/lib/...` rather than `${pkg}/bin/...`.
-          postInstall = ''
-            install -Dm755 target/release/libpam_sentinel.so \
-              $out/lib/security/pam_sentinel.so
-            install -Dm755 target/release/sentinel-helper \
-              $out/lib/sentinel-helper
-            install -Dm755 target/release/sentinel-polkit-agent \
-              $out/lib/sentinel-polkit-agent
-            install -Dm644 config/sentinel.conf \
-              $out/etc/security/sentinel.conf
-            install -Dm644 config/polkit-1 \
-              $out/etc/pam.d/polkit-1
-            install -Dm644 packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf \
-              $out/etc/systemd/system/polkit-agent-helper@.service.d/sentinel.conf
-            install -Dm644 packaging/xdg-autostart/sentinel-polkit-agent.desktop \
-              $out/etc/xdg/autostart/sentinel-polkit-agent.desktop
-
-            # Generate completions + man pages.
-            for bin in sentinel-helper sentinel-polkit-agent; do
-              $out/lib/$bin completions bash > $out/share/bash-completion/completions/$bin
-              $out/lib/$bin completions fish > $out/share/fish/vendor_completions.d/$bin.fish
-              $out/lib/$bin completions zsh  > $out/share/zsh/site-functions/_$bin
-              $out/lib/$bin man              > $out/share/man/man1/$bin.1
-            done
-            install -Dm644 packaging/man/sentinel.conf.5 \
-              $out/share/man/man5/sentinel.conf.5
-            install -Dm644 packaging/man/pam_sentinel.8 \
-              $out/share/man/man8/pam_sentinel.8
-
-            install -Dm644 LICENSE \
-              $out/share/licenses/sentinel/LICENSE
-            install -Dm644 README.md \
-              $out/share/doc/sentinel/README.md
-          '';
-
-          meta = with pkgs.lib; {
-            description = "UAC-style confirmation dialog for Linux privilege escalation";
-            homepage = "https://github.com/atayozcan/sentinel";
-            license = licenses.gpl3Plus;
-            platforms = platforms.linux;
-          };
-        };
       in {
-        packages = {
-          default = sentinel;
-          sentinel = sentinel;
-        };
-
-        apps.default = flake-utils.lib.mkApp {
-          drv = sentinel;
-          name = "sentinel-helper";
-          exePath = "/lib/sentinel-helper";
-        };
-
         devShells.default = pkgs.mkShell {
-          nativeBuildInputs = [ rustToolchain pkgs.pkg-config ];
-          buildInputs = commonInputs;
+          nativeBuildInputs = with pkgs; [
+            rustToolchain
+            pkg-config
+            qt6.wrapQtAppsHook
+          ];
+          buildInputs = with pkgs; [
+            pam
+            qt6.qtbase
+            qt6.qtdeclarative
+            qt6.qtwayland
+            kdePackages.kirigami
+            kdePackages.qqc2-desktop-style
+            kdePackages.layer-shell-qt
+            kdePackages.breeze-icons
+          ];
+          shellHook = ''
+            export SENTINEL_HELPER_PATH=/usr/lib/sentinel-helper-kde
+          '';
         };
-      }) // {
-        nixosModules.default = { config, lib, pkgs, ... }@args:
-          import ./nix/module.nix (args // {
-            config = args.config // {
-              services.sentinel.package = lib.mkDefault
-                self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-            };
-          });
-      };
+      });
 }

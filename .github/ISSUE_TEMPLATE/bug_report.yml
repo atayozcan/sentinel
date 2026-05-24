@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Bug report
+description: Something isn't working (not a security issue — those go to the Security tab).
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please reproduce on current `main` first, and
+        keep a root shell (`sudo -i`) open while testing the auth path.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what actually happened.
+      placeholder: "Running `pkexec true` … expected a no-password dialog … instead …"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - "not sure"
+        - "pam-sentinel (the PAM module / bypass)"
+        - "sentinel-polkit-agent (registration / dialog trigger)"
+        - "sentinel-helper-kde (the dialog UI)"
+        - "install.sh / uninstall.sh"
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: "Fill in the versions and SELinux mode."
+      value: |
+        - Distro + version:
+        - KDE Plasma version:
+        - polkit version (`rpm -q polkit`):
+        - SELinux mode (`cat /sys/fs/selinux/enforce`; 1 = enforcing):
+        - Sentinel commit/version:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        e.g. `journalctl --user -t sentinel-polkit-agent --since '5 min ago' --no-pager`
+      render: shell

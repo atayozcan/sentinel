@@ -39,7 +39,7 @@ cxx-qt-build = "0.8"
 name = "sentinel-helper-kde"
 summary = "KDE Plasma-native UAC-style confirmation dialog for Sentinel"
 license = "GPL-3.0-or-later"
-url = "https://github.com/atayozcan/sentinel"
+url = "https://github.com/atayozcan/sentinel-kde"
 # QML is embedded in the binary (qrc), so the binary is the only asset.
 assets = [
     { source = "target/release/sentinel-helper-kde", dest = "/usr/bin/sentinel-helper-kde", mode = "755" },

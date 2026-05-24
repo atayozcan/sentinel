@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/atayozcan/sentinel-kde/tree/main/docs/src
+    about: Installation, configuration, PAM wiring, troubleshooting, architecture.
+  - name: Security vulnerability
+    url: https://github.com/atayozcan/sentinel-kde/security
+    about: Report security issues privately, not as a public issue.

@@ -1,81 +1,53 @@
-# Contributing to Sentinel
+<!-- SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me> -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+# Contributing to Sentinel-KDE
 
-Thanks for your interest in Sentinel! Full guidance lives on the
-**[Contributing wiki page](https://github.com/atayozcan/sentinel/wiki/Contributing)**;
-this file is the short version for first-time contributors landing in
-the repo.
+Thanks for your interest! Sentinel sits in the PAM authentication path, so
+reviewers are pickier than average — but the flow is normal GitHub fork-PR-merge.
+The full guide is in [`docs/src/contributing.md`](docs/src/contributing.md).
 
-## Reporting bugs and security issues
+## Reporting
 
-- **Bugs that aren't security issues**: open a
-  [bug report](https://github.com/atayozcan/sentinel/issues/new/choose).
-- **Security vulnerabilities**: see [SECURITY.md](.github/SECURITY.md).
-  *Please don't open public issues for these.*
+- **Bugs** (not security): <https://github.com/atayozcan/sentinel-kde/issues/new/choose>
+- **Security vulnerabilities**: see [`.github/SECURITY.md`](.github/SECURITY.md) —
+  *please don't open public issues for these.*
 
 ## Development quickstart
 
 ```bash
-git clone https://github.com/atayozcan/sentinel
-cd sentinel
+sudo zypper install rustup pam-devel        # + Qt6/KF6 devel for the helper
+rustup default 1.85
 
-# Build the workspace.
+git clone https://github.com/atayozcan/sentinel-kde
+cd sentinel-kde
+
 cargo build --release --workspace
-
-# Run the test suite.
-cargo test --workspace --locked
-
-# Format + clippy (CI gate).
+cargo test --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-To exercise the PAM module + helper end-to-end on your own machine
-without affecting your live polkit setup, use the dev-test wrapper:
+Install for real (replaces your polkit/sudo auth path — keep a `sudo -i` shell
+open until you've confirmed it works):
 
 ```bash
-./scripts/dev-test.sh
+sudo ./install.sh        # transactional; sudo ./uninstall.sh reverts everything
 ```
-
-This installs into `/usr/lib/security/`, runs an isolated PAM probe,
-and rolls back unconditionally on exit.
-
-For installing for real (replaces your polkit auth path — keep a root
-shell open until you've confirmed `pkexec` works):
-
-```bash
-pkexec ./install.sh
-```
-
-The installer is transactional: every replaced file is backed up to
-`<path>.pre-sentinel.bak` and the state is recorded in
-`/var/lib/sentinel/install.state`. `pkexec ./uninstall.sh` rolls
-everything back from that state file.
 
 ## Pull requests
 
-The
-[pull-request template](.github/pull_request_template.md) lists the
-checks reviewers will look for. The big ones:
+The [PR template](.github/pull_request_template.md) lists the checklist. The big
+ones:
 
-- **Sentinel sits in the PAM auth path.** If you touch
-  `pam-sentinel`, the polkit agent, or the helper UI, please run
-  `pkexec ./install.sh && pkexec true` end-to-end before opening the
-  PR. A regression here can lock people out of `sudo` / polkit.
-- **i18n changes**: test with `LANG=tr_TR.UTF-8 pkexec true` (or any
-  shipped locale) — the `every_bundle_has_required_keys` and
-  `every_bundle_has_matching_placeholders` tests catch most issues but
-  not all rendering quirks.
-- **Install/uninstall**: please test the rollback path too
-  (`pkexec ./uninstall.sh`).
-
-## Discussion
-
-Open-ended questions — design tradeoffs, "would you take a PR for X",
-"is this in scope" — go in
-[Discussions](https://github.com/atayozcan/sentinel/discussions)
-rather than issues.
+- **Auth-path changes** (`pam-sentinel`, the agent, the helper): run
+  `sudo ./install.sh && pkexec true` end-to-end before opening the PR.
+- **Install/uninstall changes**: run `./scripts/test-install-container.sh`
+  (9 podman scenarios).
+- **Agent↔PAM channel changes**: verify they still work under enforcing SELinux
+  (`setenforce 1`).
+- **SPDX headers** on new files (`reuse lint` enforces).
 
 ## License
 
-By contributing you agree your changes ship under
-[GPL-3.0-or-later](LICENSE), Sentinel's license.
+By contributing you agree your changes ship under **GPL-3.0-or-later** — see
+[LICENSE](LICENSE).

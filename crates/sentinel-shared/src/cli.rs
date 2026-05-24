@@ -178,7 +178,10 @@ mod tests {
     #[test]
     fn windowed_flag_wins() {
         let a = args_with_flags(true, false);
-        assert_eq!(a.effective_render_mode(Some("COSMIC")), RenderMode::Windowed);
+        assert_eq!(
+            a.effective_render_mode(Some("COSMIC")),
+            RenderMode::Windowed
+        );
         assert_eq!(a.effective_render_mode(Some("GNOME")), RenderMode::Windowed);
     }
 
@@ -186,7 +189,10 @@ mod tests {
     fn layer_shell_flag_overrides_heuristic() {
         let a = args_with_flags(false, true);
         // GNOME would normally trigger windowed fallback; --layer-shell forces it.
-        assert_eq!(a.effective_render_mode(Some("GNOME")), RenderMode::LayerShell);
+        assert_eq!(
+            a.effective_render_mode(Some("GNOME")),
+            RenderMode::LayerShell
+        );
     }
 
     #[test]
@@ -197,13 +203,19 @@ mod tests {
             a.effective_render_mode(Some("ubuntu:GNOME")),
             RenderMode::Windowed
         );
-        assert_eq!(a.effective_render_mode(Some("Pantheon")), RenderMode::Windowed);
+        assert_eq!(
+            a.effective_render_mode(Some("Pantheon")),
+            RenderMode::Windowed
+        );
     }
 
     #[test]
     fn auto_uses_layer_shell_on_wlroots_family() {
         let a = args_with_flags(false, false);
-        assert_eq!(a.effective_render_mode(Some("COSMIC")), RenderMode::LayerShell);
+        assert_eq!(
+            a.effective_render_mode(Some("COSMIC")),
+            RenderMode::LayerShell
+        );
         assert_eq!(
             a.effective_render_mode(Some("Hyprland")),
             RenderMode::LayerShell

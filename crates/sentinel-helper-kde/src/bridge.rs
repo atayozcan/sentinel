@@ -120,8 +120,8 @@ impl Default for DialogControllerRust {
             true
         };
 
-        let icon_name = sentinel_shared::resolve_icon_name(a.process_exe.as_deref())
-            .unwrap_or_default();
+        let icon_name =
+            sentinel_shared::resolve_icon_name(a.process_exe.as_deref()).unwrap_or_default();
 
         let timeout_secs = i32::try_from(a.timeout).unwrap_or(i32::MAX);
         let min_time_ms = i32::try_from(a.min_time).unwrap_or(i32::MAX);

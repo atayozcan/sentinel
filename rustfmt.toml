@@ -1,0 +1,5 @@
+# Pinned for consistent formatting across contributors. These match the
+# defaults the codebase is already formatted to (`cargo fmt --all`); CI gates
+# on `cargo fmt --all -- --check`.
+edition = "2024"
+max_width = 100
