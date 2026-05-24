@@ -12,11 +12,13 @@
 
 set -Eeuo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()  { printf "${GREEN}[INFO]${NC} %s\n" "$*"; }
-warn()  { printf "${YELLOW}[WARN]${NC} %s\n" "$*"; }
-step()  { printf "${BLUE}[STEP]${NC} %s\n" "$*"; }
-error() { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
+RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
+VERBOSE=0
+say()   { printf '%s\n' "$*"; }
+info()  { if [[ $VERBOSE -eq 1 ]]; then printf '  %s\n' "$*"; fi; }
+step()  { info "$@"; }
+warn()  { printf "${YELLOW}warning:${NC} %s\n" "$*" >&2; }
+error() { printf "${RED}error:${NC} %s\n" "$*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || error "Run as root (use pkexec or sudo)."
 
@@ -27,7 +29,9 @@ STATE_DIR="/var/lib/sentinel"
 STATE_FILE="$STATE_DIR/install.state"
 
 ASSUME_YES=0
-for arg in "$@"; do [[ "$arg" == "-y" || "$arg" == "--yes" ]] && ASSUME_YES=1; done
+for arg in "$@"; do
+    case "$arg" in -y|--yes) ASSUME_YES=1 ;; -v|--verbose) VERBOSE=1 ;; esac
+done
 if [[ -t 0 && -t 1 ]]; then
     read -r -p "Remove Sentinel? [y/N] " reply
     [[ "$reply" =~ ^[Yy]$ ]] || { info "Aborted."; exit 0; }
@@ -87,12 +91,8 @@ if [[ -f "$STATE_FILE" ]]; then
     rm -f -- "$STATE_FILE"
     rmdir --ignore-fail-on-non-empty "$STATE_DIR" 2>/dev/null || true
 
-    if [[ $failures -gt 0 ]]; then
-        warn "Uninstall finished with $failures non-fatal issue(s); see warnings above."
-    else
-        info "Sentinel uninstalled cleanly."
-    fi
-    info "polkit-kde restored. If GUI auth misbehaves, log out and back in."
+    [[ $failures -gt 0 ]] && warn "finished with $failures non-fatal issue(s) (re-run with -v for detail)."
+    say "Sentinel-KDE removed; polkit-kde restored. Log out and back in if GUI auth misbehaves."
     exit 0
 fi
 
@@ -138,4 +138,4 @@ done
     info "Restored $SYSCONFDIR/pam.d/sudo from backup"
 
 systemctl daemon-reload 2>/dev/null || true
-info "Sentinel uninstalled (fallback mode). Log out and back in to fully restore polkit-kde."
+say "Sentinel-KDE removed (fallback mode). Log out and back in to fully restore polkit-kde."

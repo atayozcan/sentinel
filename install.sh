@@ -34,11 +34,13 @@
 set -Eeuo pipefail
 umask 022
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()  { printf "${GREEN}[INFO]${NC} %s\n" "$*"; }
-warn()  { printf "${YELLOW}[WARN]${NC} %s\n" "$*"; }
-step()  { printf "${BLUE}[STEP]${NC} %s\n" "$*"; }
-error() { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
+RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
+VERBOSE=0
+say()   { printf '%s\n' "$*"; }                                    # concise, always
+info()  { if [[ $VERBOSE -eq 1 ]]; then printf '  %s\n' "$*"; fi; } # detail, -v only
+step()  { info "$@"; }
+warn()  { printf "${YELLOW}warning:${NC} %s\n" "$*" >&2; }
+error() { printf "${RED}error:${NC} %s\n" "$*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || error "Run as root (use pkexec or sudo)."
 
@@ -62,6 +64,7 @@ INSTALL_SUDO=0
 for arg in "$@"; do
     case "$arg" in
         --enable-sudo) INSTALL_SUDO=1 ;;
+        -v|--verbose) VERBOSE=1 ;;
         --help|-h) sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; exit 0 ;;
         *) error "Unknown flag: $arg (try --help)" ;;
     esac
@@ -125,7 +128,7 @@ user_systemctl() {
 # missing backup or stale entry must never abort the fresh install.
 revert_previous_install() {
     [[ -f "$STATE_FILE" ]] || return 0
-    warn "Existing install detected — reverting it before reinstalling…"
+    step "Existing install detected — reverting it before reinstalling…"
     while IFS=$'\t' read -r action path backup; do
         [[ -z "${action:-}" ]] && continue
         case "$action" in
@@ -145,7 +148,7 @@ revert_previous_install
 BUILD_CRATES=(-p pam-sentinel -p sentinel-polkit-agent -p sentinel-helper-kde)
 
 if [[ "${SENTINEL_SKIP_BUILD:-0}" == "1" ]]; then
-    warn "SENTINEL_SKIP_BUILD=1 — using existing target/release artifacts."
+    step "SENTINEL_SKIP_BUILD=1 — using existing target/release artifacts."
 else
     step "Building (cargo --release)${BUILD_USER:+ as $BUILD_USER}…"
     build_cmd=(env
@@ -294,33 +297,20 @@ activate_agent || true
 
 # -------------- done -------------------------------------------------------
 
-info "Installation complete."
-cat <<EOF
-
-Installed:
-  $PREFIX/lib/security/pam_sentinel.so
-  $PREFIX/$LIBEXECDIR/sentinel-polkit-agent  (systemd --user service)
-  $HELPER_PATH
-  $SYSCONFDIR/pam.d/polkit-1
-  $SYSCONFDIR/security/sentinel.conf
-  ${BUILD_USER:+$SYSCONFDIR/polkit-1/rules.d/49-sentinel-admin.rules (admin: $BUILD_USER)}
-
-State file: $STATE_FILE
-EOF
-
 if [[ $AGENT_OK -eq 1 ]]; then
-    cat <<EOF
-
-Sentinel is the active polkit agent. Verify:
-  pkexec true        # one Sentinel dialog, Allow → no password
-To remove: pkexec ./uninstall.sh   (or sudo ./uninstall.sh)
-EOF
+    say "Sentinel-KDE installed and active. Test with: pkexec true   (remove: sudo ./uninstall.sh)"
 else
+    say "Sentinel-KDE installed. Log out and back in to activate, then: pkexec true   (remove: sudo ./uninstall.sh)"
+fi
+if [[ $VERBOSE -eq 1 ]]; then
     cat <<EOF
-
-Agent not confirmed active this session. Log out and back in (Plasma
-starts it via the user service), then:
-  pkexec true        # one Sentinel dialog, Allow → no password
-To remove: sudo ./uninstall.sh
+  installed:
+    $PREFIX/lib/security/pam_sentinel.so
+    $PREFIX/$LIBEXECDIR/sentinel-polkit-agent  (systemd --user service)
+    $HELPER_PATH
+    $SYSCONFDIR/pam.d/polkit-1                  (original saved as .pre-sentinel.bak)
+    $SYSCONFDIR/security/sentinel.conf
+    ${BUILD_USER:+$SYSCONFDIR/polkit-1/rules.d/49-sentinel-admin.rules (admin: $BUILD_USER)}
+  state: $STATE_FILE
 EOF
 fi
