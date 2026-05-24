@@ -62,7 +62,10 @@ Item {
 
         background: Kirigami.ShadowedRectangle {
             color: Kirigami.Theme.backgroundColor
-            radius: 12
+            // Toolkit-standard radius (Kirigami.Units, since KF 6.2) shared by
+            // Kirigami's own cards/buttons — tracks the theme instead of a
+            // magic number, and inherits a future system setting for free.
+            radius: Kirigami.Units.cornerRadius
             border.width: 1
             // A subtle outline derived from the text color. (Kirigami.Theme
             // has no `separatorColor` — binding it yields `undefined`.)
