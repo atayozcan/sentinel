@@ -32,7 +32,7 @@ HELPER=/usr/lib/sentinel-helper-kde
 CONF=/etc/security/sentinel.conf
 POLKIT1=/etc/pam.d/polkit-1
 USERUNIT=/usr/lib/systemd/user/sentinel-polkit-agent.service
-DROPIN=/etc/systemd/system/polkit-agent-helper@.service.d/sentinel.conf
+DBUSCONF=/usr/share/dbus-1/system.d/org.sentinel.Agent.conf
 RULE=/etc/polkit-1/rules.d/49-sentinel-admin.rules
 STATE=/var/lib/sentinel/install.state
 TESTER=tester
@@ -49,6 +49,17 @@ stage() {
     export SENTINEL_SKIP_BUILD=1
     # Pretend a normal user ran `sudo ./install.sh` so BUILD_USER resolves.
     export SUDO_UID=4242 SUDO_USER="$TESTER"
+    # The minimal test image has no polkit package; wire_pam_service reads the
+    # vendor stack from /usr/lib/pam.d, so synthesize a polkit-1 there (the
+    # common-* includes already exist via the pam base package).
+    mkdir -p /usr/lib/pam.d
+    cat > /usr/lib/pam.d/polkit-1 <<'PAMEOF'
+#%PAM-1.0
+auth       include      common-auth
+account    include      common-account
+password   include      common-password
+session    include      common-session
+PAMEOF
 }
 
 assert_installed() {
@@ -57,7 +68,10 @@ assert_installed() {
     assert_file "$PAM_SO";  assert_mode "$PAM_SO" 755;  assert_owner0 "$PAM_SO"
     assert_file "$CONF"
     assert_file "$POLKIT1"
+    assert_grep "$POLKIT1" 'pam_sentinel\.so'   # actually wired in
+    assert_grep "$POLKIT1" 'common-auth'         # vendor stack preserved → real password fallback
     assert_file "$USERUNIT"
+    assert_file "$DBUSCONF"; assert_grep "$DBUSCONF" "org.sentinel.Agent"
     assert_file "$RULE";    assert_grep "$RULE" "unix-user:$TESTER"
     assert_file "$STATE"
 }
@@ -92,6 +106,7 @@ case "$SCENARIO" in
     assert_absent "$HELPER"
     assert_absent "$CONF"
     assert_absent "$USERUNIT"
+    assert_absent "$DBUSCONF"
     assert_absent "$RULE"
     assert_absent "$STATE"
     echo "  OK: uninstall removed everything + restored pre-install state"
@@ -132,6 +147,39 @@ ORIG
     ./uninstall.sh -y
     assert_grep "$POLKIT1" 'ORIGINAL-POLKIT1-STACK'   # original restored verbatim
     echo "  OK: pre-existing /etc/pam.d/polkit-1 backed up + restored"
+    ;;
+
+  sudo-wiring)
+    stage
+    # Synthesize vendor sudo/su/sudo-i stacks; su carries pam_rootok, which
+    # must stay BEFORE our line so root still su's without a prompt.
+    cat > /usr/lib/pam.d/sudo <<'PAMEOF'
+#%PAM-1.0
+auth     include        common-auth
+account  include        common-account
+session  include        common-session
+PAMEOF
+    cat > /usr/lib/pam.d/su <<'PAMEOF'
+#%PAM-1.0
+auth      sufficient  pam_rootok.so
+auth      include     common-auth
+account   include     common-account
+session   include     common-session
+PAMEOF
+    cp /usr/lib/pam.d/sudo /usr/lib/pam.d/sudo-i
+    ./install.sh --enable-sudo
+    for svc in sudo su sudo-i; do
+        assert_file "/etc/pam.d/$svc"
+        assert_grep "/etc/pam.d/$svc" 'pam_sentinel\.so'
+    done
+    assert_grep /etc/pam.d/su 'pam_rootok'   # preserved
+    rootok_ln=$(grep -n pam_rootok /etc/pam.d/su | head -1 | cut -d: -f1)
+    sent_ln=$(grep -n pam_sentinel /etc/pam.d/su | head -1 | cut -d: -f1)
+    [[ -n "$rootok_ln" && -n "$sent_ln" && "$rootok_ln" -lt "$sent_ln" ]] \
+        || fail "su: pam_sentinel must come AFTER pam_rootok (got rootok@$rootok_ln, sentinel@$sent_ln)"
+    ./uninstall.sh -y
+    for svc in sudo su sudo-i; do assert_absent "/etc/pam.d/$svc"; done   # vendor stack restored
+    echo "  OK: --enable-sudo wired sudo/su/sudo-i (rootok order preserved) + clean uninstall"
     ;;
 
   err-nonroot)

@@ -23,7 +23,7 @@ for a in libpam_sentinel.so sentinel-polkit-agent sentinel-helper-kde; do
 done
 
 ALL=(fresh replace uninstall rollback fallback-uninstall preexisting-config
-     err-nonroot err-badflag)
+     sudo-wiring err-nonroot err-badflag)
 SCENARIOS=("$@"); [[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=("${ALL[@]}")
 
 pass=0; fail=0; failed=()

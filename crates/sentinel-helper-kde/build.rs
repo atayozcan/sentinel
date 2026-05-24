@@ -12,6 +12,13 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 fn main() {
+    // cxx-qt-build doesn't reliably emit rerun-if-changed for the QML, so a
+    // bare `.qml` edit wouldn't re-embed the qrc — you'd ship stale UI.
+    // Declare them explicitly so editing a dialog file triggers a rebuild.
+    for f in ["Main", "Windowed", "DialogCard", "DetailRow"] {
+        println!("cargo:rerun-if-changed=qml/{f}.qml");
+    }
+
     CxxQtBuilder::new_qml_module(
         // The QML files are baked into the module's qrc (loaded as
         // `qrc:/qt/qml/org/sentinel/kde/qml/<file>`), so the installed

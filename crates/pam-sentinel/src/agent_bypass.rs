@@ -1,51 +1,39 @@
 // SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Bypass check: when `pam_sentinel.so` is loaded inside
-//! `polkit-agent-helper-1` (whether socket-activated by systemd or
-//! invoked directly by an agent), connect to
-//! `$XDG_RUNTIME_DIR/sentinel-agent.sock` for the requesting user. The
-//! agent there has already shown the Sentinel dialog and pre-approved
-//! this auth attempt; reading "OK\n" from the socket means we should
-//! return `PAM_SUCCESS` directly so the dialog doesn't re-spawn.
+//! Bypass check over the **system D-Bus**: when `pam_sentinel.so` runs inside
+//! `polkit-agent-helper-1`, ask the requesting user's agent whether this auth
+//! was already approved (the user clicked Allow in the dialog). If so, return
+//! `PAM_SUCCESS` directly so the dialog doesn't re-spawn.
 //!
-//! Identifying the requesting user:
-//! - `pamh.get_user()` returns `Err(PAM_SUCCESS)` for some PAM stacks
-//!   (notably polkit-1 from `polkit-agent-helper-1`), so we also try
-//!   `pamh.get_item::<User>()` as a fallback.
-//! - Inside `polkit-agent-helper-1` (socket-activated, runs as root)
-//!   our own `geteuid()` is 0; only `PAM_USER` tells us whose session
+//! ## Why D-Bus and not a socket
+//!
+//! polkit 121+ forks the helper from polkitd; on SELinux systems (openSUSE
+//! Tumbleweed) the helper runs as `policykit_t`, which is **denied writing an
+//! arbitrary unix socket** (`var_run_t:sock_file write` isn't in policy). But
+//! `policykit_t` *is* already allowed `dbus send_msg` to user domains — that's
+//! the polkit agent protocol itself, and exactly how `pam_fprintd` does
+//! passwordless auth. So talking to the agent over the system bus rides
+//! existing MAC policy with no custom SELinux/AppArmor rules, on any version.
+//!
+//! ## Identifying the requesting user
+//! - `pamh.get_user()` returns `Err` for some PAM stacks (polkit-1 via
+//!   helper-1), so we fall back to `pamh.get_item::<User>()`.
+//! - Our own euid is 0 inside the helper; only `PAM_USER` says whose session
 //!   this auth is for.
 //!
-//! Trust model:
-//! - The socket is owned by the requesting user (mode `0600`). Cross-uid
-//!   attackers can't connect.
-//! - Same-uid attackers can connect, but they can also already drive
-//!   polkit directly. Sentinel is a UI confirmation, not a sandbox.
-//! - The agent verifies its peer (us) via `SO_PEERCRED` + `/proc/<pid>/comm`
-//!   so a same-uid attacker can't forge a "polkit-agent-helper-1"
-//!   identity by connecting from a different binary.
-//!
-//! Fail-open: any failure (no socket, refused, NO response, timeout,
-//! malformed) returns `None` so the caller falls through to the normal
-//! dialog flow. We never `PAM_AUTH_ERR` from here — confused/missing
-//! agent state must not block legitimate auth.
-//!
-//! ## Sandbox compatibility
-//!
-//! On modern systemd-socket-activated polkit setups,
-//! `polkit-agent-helper@.service` ships with `ProtectHome=yes` which
-//! masks `/run/user/<uid>` inside the sandbox. The `pam_sentinel`
-//! installer drops a unit override to disable this so `pam_sentinel.so`
-//! can reach our socket. See
-//! `packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf`.
+//! ## Trust model
+//! - Only root may call the agent's method (enforced by the D-Bus policy in
+//!   `packaging/dbus/org.sentinel.Agent.conf`), so a non-root local process
+//!   can't drain the approval queue.
+//! - Before trusting a reply we verify the `org.sentinel.Agent` bus name is
+//!   owned by the uid we're authenticating (`GetConnectionUnixUser`), so a
+//!   same-name squatter from another uid can't forge an approval.
+//! - Fail-open: any error (no agent, wrong owner, refused) returns `None` and
+//!   the stack falls through to the normal dialog/password flow. We never
+//!   `PAM_AUTH_ERR` from here.
 
 use pam::constants::PamResultCode;
 use pam::module::PamHandle;
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
-use std::time::Duration;
-
-const READ_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
     let user = resolve_user(pamh)?;
@@ -56,57 +44,48 @@ pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
             return None;
         }
     };
-    // Use the RESOLVED user's runtime dir explicitly. Do NOT use
-    // sentinel_shared::bypass_socket_path() here: it prefers
-    // $XDG_RUNTIME_DIR, but inside socket-activated polkit-agent-helper-1
-    // (which runs as root) that's root's runtime dir — so we'd look at
-    // /run/user/0 instead of the requesting user's /run/user/<uid>, and
-    // never reach the agent's socket.
-    let path = std::path::PathBuf::from(format!("/run/user/{uid}"))
-        .join(sentinel_shared::BYPASS_SOCKET_BASENAME);
-    log::debug!(
-        "agent_bypass: PAM_USER={user} uid={uid} socket={}",
-        path.display()
-    );
+    log::debug!("agent_bypass: PAM_USER={user} uid={uid}");
 
-    let mut stream = match UnixStream::connect(&path) {
-        Ok(s) => s,
-        Err(e) => {
-            log::debug!(
-                "agent_bypass: cannot connect to {} ({e}); falling through",
-                path.display()
-            );
-            return None;
-        }
-    };
-    let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(READ_TIMEOUT));
-
-    if let Err(e) = stream.write_all(b"?\n") {
-        log::debug!("agent_bypass: write failed: {e}");
-        return None;
-    }
-    let _ = stream.flush();
-
-    let mut buf = [0u8; 4];
-    let n = match stream.read(&mut buf) {
-        Ok(n) => n,
-        Err(e) => {
-            log::debug!("agent_bypass: read failed: {e}");
-            return None;
-        }
-    };
-    let resp = std::str::from_utf8(&buf[..n]).unwrap_or("").trim();
-    match resp {
-        "OK" => {
+    match query_agent(uid) {
+        Ok(true) => {
             log::info!("event=auth.allow source=bypass uid={uid}");
             Some(PamResultCode::PAM_SUCCESS)
         }
-        other => {
-            log::warn!("agent_bypass: agent declined (resp={other:?}); falling through to dialog");
+        Ok(false) => None,
+        Err(e) => {
+            log::debug!("agent_bypass: query failed ({e}); falling through");
             None
         }
     }
+}
+
+/// Query the user's agent over the system bus. Returns `Ok(true)` only when
+/// the `org.sentinel.Agent` name is owned by `uid` (anti-squat) AND the agent
+/// hands back a one-shot approval.
+fn query_agent(uid: u32) -> Result<bool, Box<dyn std::error::Error>> {
+    use zbus::blocking::{Connection, Proxy, fdo::DBusProxy};
+
+    let conn = Connection::system()?;
+
+    // Anti-squat: the agent name must be owned by the user we're authing.
+    let name: zbus::names::BusName = sentinel_shared::AGENT_BUS_NAME.try_into()?;
+    let owner_uid = DBusProxy::new(&conn)?.get_connection_unix_user(name)?;
+    if owner_uid != uid {
+        log::warn!(
+            "agent_bypass: {} owned by uid {owner_uid} != expected {uid}; refusing (squat?)",
+            sentinel_shared::AGENT_BUS_NAME
+        );
+        return Ok(false);
+    }
+
+    let proxy = Proxy::new(
+        &conn,
+        sentinel_shared::AGENT_BUS_NAME,
+        sentinel_shared::AGENT_OBJECT_PATH,
+        sentinel_shared::AGENT_INTERFACE,
+    )?;
+    let approved: bool = proxy.call("TakeApproval", &())?;
+    Ok(approved)
 }
 
 fn resolve_user(pamh: &PamHandle) -> Option<String> {

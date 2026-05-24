@@ -89,23 +89,75 @@ fn main() {
     bridge::finish_deny();
 }
 
-/// UAC-style audio cue. Optional and best-effort: libcanberra resolves the
-/// freedesktop sound *name* through the user's theme. Silent if
-/// `canberra-gtk-play` isn't installed — never blocks the dialog.
+/// UAC-style audio cue. Best-effort and non-blocking — never delays or
+/// fails the dialog. Tries libcanberra (theme-aware) first; if it isn't
+/// installed, resolves the freedesktop sound *name* to a file ourselves and
+/// plays it with whatever PipeWire / PulseAudio / ALSA player is present
+/// (so the cue still fires on a stock system without libcanberra).
 fn play_sound(name: &str) {
     if name.is_empty() {
         return;
     }
-    if let Ok(mut child) = std::process::Command::new("canberra-gtk-play")
-        .args(["-i", name])
+    // 1. canberra-gtk-play resolves the name through the user's sound theme.
+    if spawn_detached("canberra-gtk-play", &["-i", name]) {
+        return;
+    }
+    // 2. Fallback: resolve the name to a file and play it directly.
+    let Some(file) = resolve_sound_file(name) else {
+        return;
+    };
+    for (player, args) in [
+        ("pw-play", &[file.as_str()][..]),
+        ("paplay", &[file.as_str()][..]),
+        ("ffplay", &["-nodisp", "-autoexit", "-loglevel", "quiet", file.as_str()][..]),
+        ("aplay", &["-q", file.as_str()][..]),
+    ] {
+        if spawn_detached(player, args) {
+            return;
+        }
+    }
+}
+
+/// Resolve a freedesktop sound *name* (e.g. `dialog-warning`) to a playable
+/// file. Honors an absolute path verbatim. Searches the freedesktop and
+/// Oxygen themes — `dialog-warning.oga` ships with both KDE and GNOME.
+fn resolve_sound_file(name: &str) -> Option<String> {
+    if name.starts_with('/') {
+        return std::path::Path::new(name).is_file().then(|| name.to_string());
+    }
+    const DIRS: &[&str] = &[
+        "/usr/share/sounds/freedesktop/stereo",
+        "/usr/local/share/sounds/freedesktop/stereo",
+        "/usr/share/sounds/Oxygen/stereo",
+    ];
+    for dir in DIRS {
+        for ext in ["oga", "ogg", "wav"] {
+            let path = format!("{dir}/{name}.{ext}");
+            if std::path::Path::new(&path).is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+/// Spawn a detached, silenced child and reap it asynchronously so it never
+/// lingers as a zombie. Returns false if the binary isn't on PATH, so the
+/// caller can fall through to the next player.
+fn spawn_detached(bin: &str, args: &[&str]) -> bool {
+    match std::process::Command::new(bin)
+        .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
     {
-        // Reap asynchronously so the player doesn't linger as a zombie.
-        std::thread::spawn(move || {
-            let _ = child.wait();
-        });
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            true
+        }
+        Err(_) => false,
     }
 }

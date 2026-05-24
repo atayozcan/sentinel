@@ -15,9 +15,9 @@
 pub mod agent;
 pub mod approval_queue;
 pub mod authority;
+pub mod bypass_service;
 pub mod helper1;
 pub mod helper_ui;
 pub mod identity;
 pub mod session;
-pub mod socket_server;
 pub mod subject;

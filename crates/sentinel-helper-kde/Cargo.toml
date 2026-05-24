@@ -54,3 +54,9 @@ assets = [
 "qt6-declarative-imports" = "*"
 "qt6-wayland" = "*"
 "kf6-breeze-icons" = "*"
+
+# Theme-aware audio cue uses canberra-gtk-play; soft dep because the helper
+# falls back to pw-play / paplay (PipeWire/PulseAudio — present on any KDE
+# desktop) when libcanberra isn't installed.
+[package.metadata.generate-rpm.recommends]
+"canberra-gtk-play" = "*"

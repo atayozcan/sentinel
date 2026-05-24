@@ -22,12 +22,11 @@
 #     user to confirm their own escalation (UAC-style). root stays admin.
 #
 # Flags:
-#   --enable-sudo   Also wire pam_sentinel into /etc/pam.d/sudo. Default off.
-#                   (Silently rewriting /etc/pam.d/sudo is a foot-gun.)
-#
-# Env:
-#   SENTINEL_SKIP_BUILD=1   Skip `cargo build`; install existing
-#                           target/release artifacts (CI / container tests).
+#   --no-sudo   Don't guard sudo / sudo -i / su (they keep requiring a
+#               password). Default: Sentinel guards them too (prepend-in-place;
+#               the password still works as a fallback).
+#   --rebuild   Force `cargo build`. Default: reuse target/release artifacts
+#               if all are present, otherwise build.
 
 # -E (errtrace): so the ERR trap is inherited into functions and a failure
 # inside install_file() rolls back instead of exiting silently.
@@ -74,11 +73,14 @@ INSTALL_OK=0
 
 # -------------- argv -------------------------------------------------------
 
-INSTALL_SUDO=0
+INSTALL_SUDO=1      # guard sudo / sudo -i / su by default; --no-sudo opts out
+FORCE_BUILD=0       # default: reuse target/release if present; --rebuild forces a build
 for arg in "$@"; do
     case "$arg" in
-        --enable-sudo) INSTALL_SUDO=1 ;;
-        -v|--verbose) VERBOSE=1 ;;
+        --no-sudo)     INSTALL_SUDO=0 ;;
+        --enable-sudo) INSTALL_SUDO=1 ;;   # back-compat: now the default
+        --rebuild)     FORCE_BUILD=1 ;;
+        -v|--verbose)  VERBOSE=1 ;;
         --help|-h) sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; exit 0 ;;
         *) error "Unknown flag: $arg (try --help)" ;;
     esac
@@ -127,6 +129,58 @@ install_file() {
     install -Dm"$mode" -- "$src" "$dst"
 }
 
+# Locate a service's base PAM stack. openSUSE ships the vendor files under
+# /usr/lib/pam.d and lets /etc/pam.d shadow them; other distros keep
+# everything in /etc/pam.d. We honor that precedence (/etc wins).
+find_pam_base() {
+    local svc="$1" d
+    for d in "$SYSCONFDIR/pam.d" /usr/lib/pam.d /usr/etc/pam.d /lib/pam.d; do
+        [[ -f "$d/$svc" ]] && { printf '%s\n' "$d/$svc"; return 0; }
+    done
+    return 1
+}
+
+# Wire pam_sentinel into a PAM service by COPYING its existing stack and
+# inserting `auth sufficient pam_sentinel.so` just before the first
+# `auth … include/substack` line. This:
+#   * keeps the bypass first (it's sufficient → PAM_SUCCESS short-circuits),
+#   * preserves leading auth lines like su's `pam_rootok.so` (root still
+#     skips) and the vendor's session extras (pam_keyinit, …),
+#   * leaves the distro's own include (common-auth on SUSE/Debian,
+#     system-auth on Fedora) as the password fallback — so a denied/again
+#     prompt and a disabled module both fall through to a real password.
+# On openSUSE the base is /usr/lib/pam.d/<svc> and we create an /etc/pam.d
+# shadow, so uninstall just deletes our file and the vendor stack returns.
+# Idempotent; skips (warning) if the service has no base config — its
+# package isn't installed, so there's nothing to guard.
+SENTINEL_PAM_LINE='auth       sufficient pam_sentinel.so   # Sentinel-KDE: confirm instead of password'
+wire_pam_service() {
+    local svc="$1" base target="$SYSCONFDIR/pam.d/$1" tmp inserted=0 line
+    if ! base="$(find_pam_base "$svc")"; then
+        warn "No PAM config for '$svc' (package not installed?) — leaving it unguarded."
+        return 0
+    fi
+    if [[ -f "$target" ]] && grep -q 'pam_sentinel\.so' "$target"; then
+        return 0   # already wired (defensive; revert runs first on reinstall)
+    fi
+    tmp="$(mktemp)"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ $inserted -eq 0 && "$line" =~ ^[[:space:]]*auth[[:space:]].*(include|substack) ]]; then
+            printf '%s\n' "$SENTINEL_PAM_LINE" >> "$tmp"
+            inserted=1
+        fi
+        printf '%s\n' "$line" >> "$tmp"
+    done < "$base"
+    if [[ $inserted -eq 0 ]]; then
+        # No `auth … include` to anchor on (unusual): put Sentinel right after
+        # the #%PAM-1.0 header so it still runs first.
+        { printf '#%%PAM-1.0\n'; printf '%s\n' "$SENTINEL_PAM_LINE"; \
+          grep -v '^[[:space:]]*#%PAM-1\.0[[:space:]]*$' "$base"; } > "$tmp"
+    fi
+    install_file 644 "$tmp" "$target"
+    rm -f -- "$tmp"
+}
+
 # Run a `systemctl --user` command as the invoking user.
 user_systemctl() {
     runuser -u "$BUILD_USER" -- env \
@@ -154,6 +208,10 @@ revert_previous_install() {
     done < <(tac "$STATE_FILE")
     rm -f -- "$STATE_FILE"
     systemctl daemon-reload 2>/dev/null || true
+    # If the prior install had dropped a polkit.service override (older
+    # Sentinel did), restarting polkitd now drops it from the running process
+    # so it's back to vendor hardening — the new socket path needs no override.
+    systemctl try-restart polkit.service 2>/dev/null || true
 }
 revert_previous_install
 
@@ -161,8 +219,15 @@ revert_previous_install
 
 BUILD_CRATES=(-p pam-sentinel -p sentinel-polkit-agent -p sentinel-helper-kde)
 
-if [[ "${SENTINEL_SKIP_BUILD:-0}" == "1" ]]; then
-    step "SENTINEL_SKIP_BUILD=1 — using existing target/release artifacts."
+# Reuse prebuilt artifacts when they're all present (the common case after a
+# `cargo build`); build only when something's missing or --rebuild is given.
+artifacts_present() {
+    [[ -f target/release/libpam_sentinel.so \
+       && -f target/release/sentinel-polkit-agent \
+       && -f target/release/sentinel-helper-kde ]]
+}
+if [[ $FORCE_BUILD -eq 0 ]] && artifacts_present; then
+    step "Using existing target/release artifacts (pass --rebuild to force a build)."
 else
     step "Building (cargo --release)${BUILD_USER:+ as $BUILD_USER}…"
     build_cmd=(env
@@ -188,21 +253,32 @@ printf 'VERSION\t%s\t\n' "$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.tom
 step "Installing system files…"
 install_file 755 target/release/sentinel-helper-kde   "$HELPER_PATH"
 install_file 755 target/release/sentinel-polkit-agent "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
-# pam_sentinel.so needs 0755 — under polkit-agent-helper@'s sandbox
-# (NoNewPrivileges), libpam refuses to dlopen .so files without the x bit.
+# pam_sentinel.so needs 0755 — some polkit helper sandboxes (NoNewPrivileges)
+# make libpam refuse to dlopen .so files without the executable bit.
 install_file 755 target/release/libpam_sentinel.so    "$PAM_MODULE_DIR/pam_sentinel.so"
 
 install_file 644 config/sentinel.conf                 "$SYSCONFDIR/security/sentinel.conf"
-install_file 644 config/polkit-1                       "$SYSCONFDIR/pam.d/polkit-1"
+
+# Wire pam_sentinel into polkit's PAM stack (this is what makes pkexec /
+# polkit prompts show the Sentinel dialog). Prepend-in-place onto the
+# distro's own polkit-1 stack — see wire_pam_service.
+wire_pam_service polkit-1
 
 # systemd *user* unit for the agent (registers cleanly on Plasma 6).
 install_file 644 packaging/systemd/user/sentinel-polkit-agent.service \
     "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"
 
-# Drop-in disabling ProtectHome on polkit-agent-helper@ so pam_sentinel.so
-# inside helper-1 can reach the agent's bypass socket in /run/user/<uid>.
-install_file 644 packaging/systemd/polkit-agent-helper@.service.d/sentinel.conf \
-    "$SYSCONFDIR/systemd/system/polkit-agent-helper@.service.d/sentinel.conf"
+# Bypass channel = the system D-Bus. The agent claims org.sentinel.Agent and
+# pam_sentinel.so (root, inside the polkitd-forked helper-1) calls it to
+# consume a pre-approval. On SELinux this rides the existing
+# `policykit_t -> userdomain dbus send_msg` allow (same path pam_fprintd
+# uses), so NO custom SELinux/AppArmor policy and NO polkit.service override
+# are needed. This D-Bus policy lets the user own the name + lets root call it.
+install_file 644 packaging/dbus/org.sentinel.Agent.conf \
+    "$PREFIX/share/dbus-1/system.d/org.sentinel.Agent.conf"
+# Reload the system bus so it picks up the new policy before the agent (below)
+# tries to claim the name. reload (SIGHUP), not restart — no client disconnects.
+systemctl reload dbus.service 2>/dev/null || systemctl reload dbus-broker.service 2>/dev/null || true
 
 # Polkit admin rule: Sentinel's no-password model needs the logged-in user
 # to be a polkit administrator (you confirm your own escalation). Without
@@ -226,8 +302,15 @@ else
     warn "will fall back to a password unless you add the rule yourself."
 fi
 
-# Optional /etc/pam.d/sudo.
-[[ $INSTALL_SUDO -eq 1 ]] && install_file 644 config/sudo "$SYSCONFDIR/pam.d/sudo"
+# Optional: also guard terminal escalation (sudo / sudo -i / su). Same
+# prepend-in-place treatment so each keeps its real password fallback (and
+# su keeps pam_rootok, so root still su's without a prompt). Off by default
+# — turning sudo into click-to-allow removes its password barrier.
+if [[ $INSTALL_SUDO -eq 1 ]]; then
+    for svc in sudo sudo-i su; do
+        wire_pam_service "$svc"
+    done
+fi
 
 # Agent shell completions + man pages.
 step "Generating completions + man pages…"
@@ -261,11 +344,23 @@ verify "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"     755 exe
 verify "$PAM_MODULE_DIR/pam_sentinel.so"               755 regular
 verify "$SYSCONFDIR/security/sentinel.conf"            644 regular
 verify "$SYSCONFDIR/pam.d/polkit-1"                    644 regular
+grep -q 'pam_sentinel\.so' "$SYSCONFDIR/pam.d/polkit-1" \
+    || error "polkit-1 wiring failed: pam_sentinel line is missing from $SYSCONFDIR/pam.d/polkit-1"
 verify "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service" 644 regular
+verify "$PREFIX/share/dbus-1/system.d/org.sentinel.Agent.conf" 644 regular
 [[ -n "$BUILD_USER" ]] && verify "$SYSCONFDIR/polkit-1/rules.d/49-sentinel-admin.rules" 644 regular
-[[ $INSTALL_SUDO -eq 1 ]] && verify "$SYSCONFDIR/pam.d/sudo" 644 regular
+# sudo/su are best-effort (skipped when the package isn't installed); verify
+# only what actually got wired.
+if [[ $INSTALL_SUDO -eq 1 ]]; then
+    for svc in sudo sudo-i su; do
+        [[ -f "$SYSCONFDIR/pam.d/$svc" ]] && verify "$SYSCONFDIR/pam.d/$svc" 644 regular
+    done
+fi
 
 systemctl daemon-reload 2>/dev/null || true
+# Note: we deliberately do NOT touch polkit.service anymore. The bypass socket
+# lives in /run/sentinel (reachable from polkitd's sandbox as-is), so polkitd
+# keeps its full vendor hardening — nothing to restart.
 
 # -------------- commit -----------------------------------------------------
 
@@ -311,12 +406,15 @@ activate_agent || true
 
 # -------------- done -------------------------------------------------------
 
-if [[ $AGENT_OK -eq 1 ]]; then
-    say "Sentinel-KDE installed and active. Test with: pkexec true   (remove: sudo ./uninstall.sh)"
-else
-    say "Sentinel-KDE installed. Log out and back in to activate, then: pkexec true   (remove: sudo ./uninstall.sh)"
-fi
+# Silent on success, like a normal package install. `-v` prints the summary;
+# the only thing worth saying in quiet mode is when the user must act (the
+# agent couldn't auto-activate, so they need to re-login).
 if [[ $VERBOSE -eq 1 ]]; then
+    if [[ $AGENT_OK -eq 1 ]]; then
+        say "Sentinel-KDE installed and active. Test with: pkexec true   (remove: sudo ./uninstall.sh)"
+    else
+        say "Sentinel-KDE installed. Log out and back in to activate, then: pkexec true   (remove: sudo ./uninstall.sh)"
+    fi
     cat <<EOF
   installed:
     $PAM_MODULE_DIR/pam_sentinel.so
@@ -327,4 +425,6 @@ if [[ $VERBOSE -eq 1 ]]; then
     ${BUILD_USER:+$SYSCONFDIR/polkit-1/rules.d/49-sentinel-admin.rules (admin: $BUILD_USER)}
   state: $STATE_FILE
 EOF
+elif [[ $AGENT_OK -ne 1 ]]; then
+    warn "Sentinel-KDE installed but the agent isn't active yet — log out and back in."
 fi

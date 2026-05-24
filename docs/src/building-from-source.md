@@ -73,14 +73,15 @@ clobbering of your real config).
 ```
 
 Produces `dist/`:
-- `sentinel-0.8.0.tar.gz` (source)
-- `sentinel-0.8.0-x86_64-linux.tar.gz` (binary, install layout)
+- `sentinel-kde-0.8.0.tar.gz` (source)
+- `sentinel-kde-0.8.0-x86_64-linux.tar.gz` (binary installer bundle —
+  prebuilt binaries + `install.sh`; on the target run
+  `sudo SENTINEL_SKIP_BUILD=1 ./install.sh`)
 - per-arch `.sha256` files
 
-For deb/rpm:
+For an openSUSE/Fedora RPM of the helper:
 ```bash
-cargo deb --no-build -p sentinel-helper
-cargo generate-rpm -p crates/sentinel-helper
+cargo generate-rpm -p crates/sentinel-helper-kde
 ```
 
 ## Shell completions and man pages

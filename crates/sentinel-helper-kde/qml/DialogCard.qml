@@ -20,6 +20,12 @@ import org.sentinel.kde 1.0
 Item {
     id: rootItem
 
+    // Capture the destructive color from the *default* theme here so the Deny
+    // button can apply it under `Theme.inherit: false` without a binding loop
+    // (referencing Theme.negativeTextColor from inside the button's own
+    // overridden theme makes qqc2-desktop-style recompute forever).
+    readonly property color destructiveColor: Kirigami.Theme.negativeTextColor
+
     DialogController {
         id: ctrl
     }
@@ -58,7 +64,11 @@ Item {
             color: Kirigami.Theme.backgroundColor
             radius: 12
             border.width: 1
-            border.color: Kirigami.Theme.separatorColor
+            // A subtle outline derived from the text color. (Kirigami.Theme
+            // has no `separatorColor` — binding it yields `undefined`.)
+            border.color: Qt.rgba(Kirigami.Theme.textColor.r,
+                                  Kirigami.Theme.textColor.g,
+                                  Kirigami.Theme.textColor.b, 0.15)
             shadow.size: 24
             shadow.yOffset: 8
             shadow.color: Qt.rgba(0, 0, 0, 0.45)
@@ -208,9 +218,10 @@ Item {
                     icon.name: "dialog-cancel"
                     Layout.fillWidth: true
                     onClicked: ctrl.deny()
-                    // Destructive tint.
+                    // Destructive tint (sourced from rootItem to avoid a
+                    // self-referential binding loop — see destructiveColor).
                     Kirigami.Theme.inherit: false
-                    Kirigami.Theme.textColor: Kirigami.Theme.negativeTextColor
+                    Kirigami.Theme.textColor: rootItem.destructiveColor
                 }
             }
         }

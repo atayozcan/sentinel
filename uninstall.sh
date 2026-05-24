@@ -88,6 +88,12 @@ if [[ -f "$STATE_FILE" ]]; then
     done < <(tac "$STATE_FILE")
 
     systemctl daemon-reload 2>/dev/null || true
+    # Reload the bus so the removed org.sentinel.Agent policy stops applying.
+    systemctl reload dbus.service 2>/dev/null || systemctl reload dbus-broker.service 2>/dev/null || true
+    # Restart polkit only if a prior install had dropped a polkit.service
+    # override (older Sentinel did; current installs don't touch it).
+    systemctl try-restart polkit.service 2>/dev/null || true
+    rm -rf -- /run/sentinel 2>/dev/null || true   # legacy runtime dir from older installs
     rm -f -- "$STATE_FILE"
     rmdir --ignore-fail-on-non-empty "$STATE_DIR" 2>/dev/null || true
 
@@ -116,7 +122,13 @@ FALLBACK_PATHS=(
     "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"
     "$SYSCONFDIR/security/sentinel.conf"
     "$SYSCONFDIR/pam.d/polkit-1"
+    "$SYSCONFDIR/pam.d/sudo"
+    "$SYSCONFDIR/pam.d/sudo-i"
+    "$SYSCONFDIR/pam.d/su"
     "$SYSCONFDIR/polkit-1/rules.d/49-sentinel-admin.rules"
+    "$PREFIX/share/dbus-1/system.d/org.sentinel.Agent.conf"
+    "$PREFIX/lib/tmpfiles.d/sentinel.conf"
+    "$SYSCONFDIR/systemd/system/polkit.service.d/sentinel.conf"
     "$SYSCONFDIR/systemd/system/polkit-agent-helper@.service.d/sentinel.conf"
     "$PREFIX/share/man/man1/sentinel-polkit-agent.1"
     "$PREFIX/share/man/man5/sentinel.conf.5"
@@ -134,9 +146,8 @@ for p in "${FALLBACK_PATHS[@]}"; do
         fi
     fi
 done
-[[ -f "$SYSCONFDIR/pam.d/sudo.pre-sentinel.bak" ]] && \
-    mv -f -- "$SYSCONFDIR/pam.d/sudo.pre-sentinel.bak" "$SYSCONFDIR/pam.d/sudo" && \
-    info "Restored $SYSCONFDIR/pam.d/sudo from backup"
-
+rm -rf -- /run/sentinel 2>/dev/null || true   # legacy runtime dir from older installs
 systemctl daemon-reload 2>/dev/null || true
+systemctl reload dbus.service 2>/dev/null || systemctl reload dbus-broker.service 2>/dev/null || true
+systemctl try-restart polkit.service 2>/dev/null || true   # only matters if an older install dropped a polkit override
 say "Sentinel-KDE removed (fallback mode). Log out and back in to fully restore polkit-kde."
