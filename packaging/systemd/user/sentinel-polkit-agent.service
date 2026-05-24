@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Systemd *user* service for the Sentinel polkit authentication agent.
+#
+# Plasma 6 (and other modern desktops) run their polkit agent as a
+# systemd user service rather than an XDG autostart entry, and — unlike a
+# detached, hand-spawned process — a user service started as PartOf the
+# graphical session registers with polkitd cleanly (it inherits the
+# session's XDG_SESSION_ID, which is what RegisterAuthenticationAgent's
+# session-equality check needs). Mirrors plasma-polkit-agent.service.
+#
+# Installed to {PREFIX}/lib/systemd/user/ and enabled per-user by the
+# installer (which also masks plasma-polkit-agent.service so Sentinel is
+# the session's sole agent).
+
+[Unit]
+Description=Sentinel polkit authentication agent
+PartOf=graphical-session.target
+After=graphical-session.target
+# Only meaningful inside a real login session (the agent resolves its
+# polkit subject from XDG_SESSION_ID).
+ConditionEnvironment=XDG_SESSION_ID
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/sentinel-polkit-agent
+Restart=on-failure
+RestartSec=1
+Slice=background.slice
+
+[Install]
+WantedBy=graphical-session.target

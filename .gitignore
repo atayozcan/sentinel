@@ -1,0 +1,37 @@
+# Rust
+/target/
+/crates/*/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE / editor cruft
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# AUR makepkg artefacts (root-level only — do not match crates/*/src)
+/pkg/
+/src/
+*.pkg.tar.zst
+*.pkg.tar.xz
+/packaging/arch/*.tar.gz
+/packaging/arch/sentinel-*
+
+# Release artefacts
+/dist/
+*.tar.gz
+*.tar.xz
+*.sha256
+
+# Debug
+core
+*.core
+*.log
+
+# Local task scratch
+/TODO
+/.notes/
