@@ -52,6 +52,20 @@ SYSCONFDIR=${SYSCONFDIR:-/etc}
 LIBEXECDIR=${LIBEXECDIR:-lib}
 HELPER_PATH="$PREFIX/$LIBEXECDIR/sentinel-helper-kde"
 
+# PAM module directory is distro/multilib dependent (/usr/lib64/security on
+# SUSE/Fedora, /usr/lib/<triplet>/security on Debian). Detect it from the
+# canonical pam_unix.so — getting this wrong means libpam silently never
+# loads pam_sentinel.so and every auth falls through to a password.
+detect_pam_dir() {
+    local d
+    for d in /usr/lib64/security /usr/lib/security /lib64/security /lib/security \
+             "/usr/lib/$(uname -m)-linux-gnu/security"; do
+        [[ -e "$d/pam_unix.so" ]] && { echo "$d"; return 0; }
+    done
+    echo "$PREFIX/lib/security"
+}
+PAM_MODULE_DIR="${PAM_MODULE_DIR:-$(detect_pam_dir)}"
+
 STATE_DIR="/var/lib/sentinel"
 STATE_FILE="$STATE_DIR/install.state"
 STATE_TMP="$(mktemp "${STATE_DIR%/}.install.XXXXXX" 2>/dev/null || mktemp)"
@@ -176,7 +190,7 @@ install_file 755 target/release/sentinel-helper-kde   "$HELPER_PATH"
 install_file 755 target/release/sentinel-polkit-agent "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
 # pam_sentinel.so needs 0755 — under polkit-agent-helper@'s sandbox
 # (NoNewPrivileges), libpam refuses to dlopen .so files without the x bit.
-install_file 755 target/release/libpam_sentinel.so    "$PREFIX/lib/security/pam_sentinel.so"
+install_file 755 target/release/libpam_sentinel.so    "$PAM_MODULE_DIR/pam_sentinel.so"
 
 install_file 644 config/sentinel.conf                 "$SYSCONFDIR/security/sentinel.conf"
 install_file 644 config/polkit-1                       "$SYSCONFDIR/pam.d/polkit-1"
@@ -244,7 +258,7 @@ verify() {
 }
 verify "$HELPER_PATH"                                   755 exe
 verify "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"     755 exe
-verify "$PREFIX/lib/security/pam_sentinel.so"          755 regular
+verify "$PAM_MODULE_DIR/pam_sentinel.so"               755 regular
 verify "$SYSCONFDIR/security/sentinel.conf"            644 regular
 verify "$SYSCONFDIR/pam.d/polkit-1"                    644 regular
 verify "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service" 644 regular
@@ -305,7 +319,7 @@ fi
 if [[ $VERBOSE -eq 1 ]]; then
     cat <<EOF
   installed:
-    $PREFIX/lib/security/pam_sentinel.so
+    $PAM_MODULE_DIR/pam_sentinel.so
     $PREFIX/$LIBEXECDIR/sentinel-polkit-agent  (systemd --user service)
     $HELPER_PATH
     $SYSCONFDIR/pam.d/polkit-1                  (original saved as .pre-sentinel.bak)

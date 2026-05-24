@@ -26,7 +26,7 @@ assert_owner0() { local o; o=$(stat -c %u:%g "$1" 2>/dev/null) || fail "stat $1"
 assert_grep()   { grep -q -- "$2" "$1" || fail "no /$2/ in $1"; }
 
 # Default install paths.
-PAM_SO=/usr/lib/security/pam_sentinel.so
+PAM_SO=/usr/lib64/security/pam_sentinel.so   # openSUSE multilib PAM dir (where pam_unix.so lives)
 AGENT=/usr/lib/sentinel-polkit-agent
 HELPER=/usr/lib/sentinel-helper-kde
 CONF=/etc/security/sentinel.conf
@@ -99,11 +99,13 @@ case "$SCENARIO" in
 
   rollback)
     stage
-    rm -rf /usr/lib/security
-    : > /usr/lib/security        # a FILE where install -D needs a dir → fails mid-run
+    # Make the config dir a FILE so install -D fails at the sentinel.conf
+    # step — AFTER the binaries are already installed → exercises rollback.
+    rm -rf /etc/security
+    : > /etc/security
     if ./install.sh; then fail "install should have failed"; fi
-    assert_absent "$AGENT"       # rolled back
-    assert_absent "$RULE"        # rolled back
+    assert_absent "$AGENT"       # rolled back (installed before the config step)
+    assert_absent "$PAM_SO"      # rolled back
     assert_absent "$STATE"       # never committed
     echo "  OK: failed install rolled back cleanly (errtrace + ERR trap)"
     ;;

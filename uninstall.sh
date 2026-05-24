@@ -109,7 +109,8 @@ for uid in /run/user/*; do
 done
 
 FALLBACK_PATHS=(
-    "$PREFIX/lib/security/pam_sentinel.so"
+    "/usr/lib64/security/pam_sentinel.so"
+    "/usr/lib/security/pam_sentinel.so"
     "$PREFIX/$LIBEXECDIR/sentinel-helper-kde"
     "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
     "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"
