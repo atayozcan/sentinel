@@ -20,3 +20,12 @@ log.workspace = true
 # polkit agent share the boilerplate. The helper transitively depends
 # on it but doesn't reference the module; LTO drops the unused code.
 syslog.workspace = true
+# Optional: powers the shared `cli` module (Args parser + render-mode
+# resolution) consumed by the helper frontends. Off by default so
+# pam-sentinel and the polkit agent never compile clap.
+clap = { version = "4", features = ["derive"], optional = true }
+
+[features]
+# Enable the shared `cli` module. The helper crates turn this on; the
+# PAM module / polkit agent leave it off.
+cli = ["dep:clap"]

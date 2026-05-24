@@ -34,6 +34,12 @@ use std::path::{Path, PathBuf};
 
 pub mod audit;
 
+/// CLI surface shared by the helper frontends (COSMIC + Plasma). Gated
+/// behind the `cli` feature so the PAM module and polkit agent — which
+/// never parse these args — don't pull in `clap`.
+#[cfg(feature = "cli")]
+pub mod cli;
+
 /// Compile-time absolute path to the system config file. Set by this
 /// crate's `build.rs` from `$SENTINEL_SYSCONFDIR/security/sentinel.conf`.
 pub const CONFIG_PATH: &str = env!("SENTINEL_CONFIG_PATH");
@@ -478,6 +484,20 @@ pub fn process_basename(exe: &str) -> Option<&str> {
     std::path::Path::new(exe)
         .file_name()
         .and_then(|s| s.to_str())
+}
+
+/// Generic shield icon shown when the requesting binary's basename has
+/// no icon-theme match. Present in every standard freedesktop theme
+/// (Breeze, Adwaita, Pop, …). Frontends use this as the fallback name.
+pub const FALLBACK_ICON_NAME: &str = "system-lock-screen";
+
+/// Icon-theme name to display for a requesting executable: the exe's
+/// basename (e.g. `/usr/bin/firefox` → `firefox`). `None` when there's
+/// no exe to derive a name from. Frontends apply their own theme
+/// fallback ([`FALLBACK_ICON_NAME`]) when the name doesn't resolve, so
+/// the COSMIC and Plasma helpers agree on icon selection.
+pub fn resolve_icon_name(process_exe: Option<&str>) -> Option<String> {
+    process_exe.and_then(process_basename).map(str::to_string)
 }
 
 /// systemd-logind session/user metadata, read from the plain
