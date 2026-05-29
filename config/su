@@ -1,4 +1,5 @@
 #%PAM-1.0
+# SPDX-FileCopyrightText: 2026 Atay Özcan <atay@oezcan.me>
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Drop-in for /etc/pam.d/su to guard su via Sentinel.
 #

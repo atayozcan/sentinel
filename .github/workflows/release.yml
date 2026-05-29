@@ -51,6 +51,8 @@ jobs:
             runs-on: ubuntu-24.04-arm
     steps:
       - name: Install toolchain + Qt/KF6 deps
+        # Same set as ci.yml's helper job — Wayland / xkbcommon / fontconfig
+        # headers come transitively via qt6-base-devel + qt6-wayland.
         run: >
           zypper -n install --no-recommends git tar gzip gcc gcc-c++ make
           rust cargo pam-devel
@@ -58,8 +60,6 @@ jobs:
           qt6-declarative-devel qt6-declarative-private-devel
           kf6-kirigami-imports kf6-qqc2-desktop-style
           layer-shell-qt6-imports kf6-breeze-icons qt6-wayland
-          libxkbcommon-devel libwayland-client-devel
-          fontconfig-devel freetype2-devel
 
       - uses: actions/checkout@v4
         with:
