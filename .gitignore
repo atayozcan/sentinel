@@ -21,6 +21,10 @@ Cargo.lock.bak
 *.pkg.tar.xz
 /packaging/arch/*.tar.gz
 /packaging/arch/sentinel-*
+# Re-include the install hook and the polkit admin rules — both are
+# real source files the AUR PKGBUILDs read, not makepkg-generated output.
+!/packaging/arch/sentinel-kde.install
+!/packaging/arch/sentinel-*.rules
 
 # Release artefacts
 /dist/
