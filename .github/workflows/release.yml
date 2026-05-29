@@ -1,0 +1,199 @@
+# SPDX-FileCopyrightText: 2026 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Don't cancel an in-flight release if a second tag is pushed before the
+# first finishes — half-uploaded artefacts + a draft GH release with
+# missing assets is worse than queuing.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Default to read-only at workflow level; the jobs that need write
+# override it explicitly. Keeps Scorecard's TokenPermissionsID happy.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build a source tarball + per-arch binary installer bundle (the same
+  # pair `scripts/build-release.sh` produces locally). The bundle contains
+  # libpam_sentinel.so + sentinel-polkit-agent + sentinel-helper-kde and
+  # everything install.sh reads at SENTINEL_SKIP_BUILD=1 time — the target
+  # box runs `sudo SENTINEL_SKIP_BUILD=1 ./install.sh` with no toolchain.
+  # ---------------------------------------------------------------------------
+  build:
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runs-on }}
+    # openSUSE Tumbleweed has Qt 6 + KF 6 + layer-shell-qt6 + cxx-qt's
+    # transitive private headers without the apt-side packaging headaches
+    # Ubuntu has for KF 6 — same container the PR CI uses.
+    container: registry.opensuse.org/opensuse/tumbleweed:latest
+    permissions:
+      # Sigstore attestation upload binds artefact sha256 to this workflow's
+      # OIDC identity. Verify downstream with:
+      #   gh attestation verify <file> --repo atayozcan/sentinel-kde
+      id-token: write
+      attestations: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Install toolchain + Qt/KF6 deps
+        run: >
+          zypper -n install --no-recommends git tar gzip gcc gcc-c++ make
+          rust cargo pam-devel
+          qt6-base-devel qt6-base-private-devel
+          qt6-declarative-devel qt6-declarative-private-devel
+          kf6-kirigami-imports kf6-qqc2-desktop-style
+          layer-shell-qt6-imports kf6-breeze-icons qt6-wayland
+          libxkbcommon-devel libwayland-client-devel
+          fontconfig-devel freetype2-devel
+
+      - uses: actions/checkout@v4
+        with:
+          # build-release.sh runs `git archive HEAD` for the source tarball;
+          # a shallow checkout still works (HEAD is reachable), but fetching
+          # tags lets `git describe` resolve $pkgver in the -git PKGBUILD if
+          # we ever build that here.
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build tarballs
+        run: ./scripts/build-release.sh "${{ steps.ver.outputs.version }}"
+
+      # Each .tar.gz gets a Sigstore-signed provenance bundle linking the
+      # sha256 to THIS workflow run + commit. Lives on the repo's
+      # /attestations endpoint, not in this artefact list.
+      - name: Attest release artefacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            dist/*.tar.gz
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-kde-${{ steps.ver.outputs.version }}-${{ matrix.arch }}
+          path: dist/
+
+  # ---------------------------------------------------------------------------
+  # Create the GitHub release with the matrix artefacts as assets.
+  # ---------------------------------------------------------------------------
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      # `gh release create` needs write on contents to create the release
+      # object and upload assets.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify release-notes file exists
+        # Fail fast if .github/release-notes/v$VERSION.md is missing —
+        # otherwise `gh release create --notes-file` errors out AFTER the
+        # tag + artefact upload, leaving a half-published release.
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if [ ! -f ".github/release-notes/v$v.md" ]; then
+            echo "::error::missing .github/release-notes/v$v.md — create it before tagging" >&2
+            exit 1
+          fi
+
+      - name: Download artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+
+      - name: Flatten
+        run: |
+          mkdir -p dist
+          # Per-matrix artefact names are unique (source tarball + sha256
+          # only emitted on x86_64), so plain mv has no collisions.
+          find artefacts -type f \( -name '*.tar.gz' -o -name '*.sha256' \) \
+            -exec mv -t dist/ {} +
+          ls -la dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Sentinel-KDE v$v" \
+            --notes-file ".github/release-notes/v$v.md" \
+            dist/*
+
+  # ---------------------------------------------------------------------------
+  # AUR publish — sentinel-kde (stable, tag tarball) + sentinel-kde-git
+  # (VCS, tracks main).
+  #
+  # Gated on `release` succeeding so we don't publish to AUR when the
+  # build or release upload failed.
+  #
+  # Secrets required (repo Settings → Secrets and variables → Actions):
+  #   AUR_SSH_PRIVATE_KEY  — private half of an ed25519 key whose public
+  #                          half is on the AUR account
+  #                          (https://aur.archlinux.org/account/sipsip,
+  #                          "SSH Public Key" field). Must be AUR-only;
+  #                          do NOT reuse a personal key.
+  #
+  # First-time bootstrap is manual — this action pushes to existing AUR
+  # repos, it doesn't create them. One-time:
+  #   git clone ssh://aur@aur.archlinux.org/sentinel-kde.git
+  #   git clone ssh://aur@aur.archlinux.org/sentinel-kde-git.git
+  # ---------------------------------------------------------------------------
+  publish-aur:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkgname: sentinel-kde
+            pkgbuild: packaging/arch/PKGBUILD
+          - pkgname: sentinel-kde-git
+            pkgbuild: packaging/arch/PKGBUILD-git
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage PKGBUILD + install hook
+        run: |
+          mkdir -p aur-stage
+          cp "${{ matrix.pkgbuild }}" aur-stage/PKGBUILD
+          cp packaging/arch/sentinel-kde.install aur-stage/
+
+      # Pinned to a tagged release (not @master) so a hijacked action
+      # can't silently push to AUR with our key. Bump deliberately.
+      # Latest: https://github.com/KSXGitHub/github-actions-deploy-aur/releases
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+        with:
+          pkgname: ${{ matrix.pkgname }}
+          pkgbuild: aur-stage/PKGBUILD
+          assets: aur-stage/sentinel-kde.install
+          commit_username: sipsip
+          commit_email: atayozcan@pm.me
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Release ${{ github.ref_name }}"
+          updpkgsums: true
+          ssh_keyscan_types: rsa,ed25519

@@ -1,0 +1,13 @@
+#%PAM-1.0
+# SPDX-License-Identifier: GPL-3.0-or-later
+# PAM configuration for polkit with sentinel-kde.
+#
+# `sufficient` = if the Sentinel dialog is confirmed (auth.allow), skip the
+# password and short-circuit success. If denied, unreachable, or the module
+# is missing, fall through to the distro's normal password stack below —
+# so a broken or absent Sentinel install never locks anyone out.
+auth       sufficient pam_sentinel.so
+auth       include    system-auth
+account    include    system-auth
+password   include    system-auth
+session    include    system-auth

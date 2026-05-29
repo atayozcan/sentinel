@@ -1,0 +1,12 @@
+#%PAM-1.0
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Drop-in for /etc/pam.d/su to guard su via Sentinel.
+#
+# Copy this file to /etc/pam.d/su (review the existing one first!).
+# Same prepend-in-place pattern as the sudo drop-in: confirmation succeeds
+# without a password, denial / failure falls through to the normal stack.
+auth       sufficient pam_sentinel.so
+auth       include    system-auth
+account    include    system-auth
+password   include    system-auth
+session    include    system-auth

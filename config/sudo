@@ -1,0 +1,17 @@
+#%PAM-1.0
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Drop-in for /etc/pam.d/sudo to guard sudo via Sentinel.
+#
+# Copy this file to /etc/pam.d/sudo (review the existing one first!).
+# `sufficient` = if the Sentinel dialog is confirmed, skip the password;
+# if denied or the module is unreachable, fall through to the normal
+# password prompt — no lockout.
+#
+# On distros where sudo's PAM stack does NOT include system-auth (e.g.
+# openSUSE uses `common-auth`), keep this file's `include` lines aligned
+# with what your distro ships in /etc/pam.d/sudo by default.
+auth       sufficient pam_sentinel.so
+auth       include    system-auth
+account    include    system-auth
+password   include    system-auth
+session    include    system-auth
