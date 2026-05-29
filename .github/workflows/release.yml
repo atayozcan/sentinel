@@ -75,6 +75,16 @@ jobs:
           v="${GITHUB_REF_NAME#v}"
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
+      - name: Mark workspace safe for git
+        # The openSUSE container mounts /__w/sentinel-kde/sentinel-kde with the
+        # runner's UID; git inside the container sees a different owner and
+        # bails on `git archive HEAD` (the source-tarball step in
+        # build-release.sh) with "dubious ownership". This is the documented
+        # opt-in. Only the x86_64 matrix entry runs `git archive`, but we set
+        # it on both arches to keep the step identical and avoid surprise if
+        # build-release.sh ever calls git elsewhere.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Build tarballs
         run: ./scripts/build-release.sh "${{ steps.ver.outputs.version }}"
 
