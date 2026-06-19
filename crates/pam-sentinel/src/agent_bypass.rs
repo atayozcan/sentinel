@@ -35,7 +35,7 @@
 use pam::constants::PamResultCode;
 use pam::module::PamHandle;
 
-pub fn check_agent_bypass(pamh: &PamHandle) -> Option<PamResultCode> {
+pub fn check_agent_bypass(pamh: &mut PamHandle) -> Option<PamResultCode> {
     let user = resolve_user(pamh)?;
     let uid = match nix::unistd::User::from_name(&user) {
         Ok(Some(u)) => u.uid.as_raw(),
@@ -88,7 +88,7 @@ fn query_agent(uid: u32) -> Result<bool, Box<dyn std::error::Error>> {
     Ok(approved)
 }
 
-fn resolve_user(pamh: &PamHandle) -> Option<String> {
+fn resolve_user(pamh: &mut PamHandle) -> Option<String> {
     if let Ok(s) = pamh.get_user(None) {
         return Some(s);
     }

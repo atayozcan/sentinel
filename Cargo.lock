@@ -933,11 +933,12 @@ dependencies = [
 
 [[package]]
 name = "pam-bindings"
-version = "0.1.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95c337e922acb6ab9c3ddd1016fed13957a5bf14f51b6caa293ddc8dd47660ca"
+checksum = "95ca8ded51d7b55e02c84ee36e024ea9843d800da0ed371e07e6733092bd073e"
 dependencies = [
  "libc",
+ "zeroize",
 ]
 
 [[package]]
@@ -1836,6 +1837,12 @@ dependencies = [
  "winnow",
  "zvariant",
 ]
+
+[[package]]
+name = "zeroize"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
 
 [[package]]
 name = "zmij"
