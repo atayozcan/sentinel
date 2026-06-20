@@ -29,7 +29,9 @@ use proc_info::ProcessInfo;
 use sentinel_shared::audit;
 use sentinel_shared::log_kv::quote as q;
 use sentinel_shared::logfmt_session_for_pid;
-use sentinel_shared::{HeadlessAction, Outcome, ServiceConfig, format_message, load};
+use sentinel_shared::{
+    HeadlessAction, Outcome, PolicyDecision, ServiceConfig, format_message, load,
+};
 use std::ffi::CStr;
 use std::time::Instant;
 
@@ -71,6 +73,12 @@ impl PamHooks for PamSentinel {
         }
 
         let process = ProcessInfo::for_pid(process_pid);
+
+        // Static [policy] allow/deny, evaluated before the dialog.
+        if let Some(rc) = check_policy(&cfg, &service, &user, &process, requesting_uid) {
+            return rc;
+        }
+
         spawn_dialog(&cfg, &service, &user, &process, process_pid, requesting_uid)
     }
 
@@ -167,6 +175,40 @@ fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultC
             PamResultCode::PAM_IGNORE
         }
     }
+}
+
+/// Static `[policy]` allow/deny, evaluated *before* spawning the dialog.
+/// Matches on the requesting binary's resolved exe path
+/// (`/proc/<pid>/exe`) — never the spoofable `argv[0]`. Returns
+/// `Some(rc)` to short-circuit, `None` to fall through to the dialog.
+///
+/// An `allow` match is passwordless elevation (admin opt-in, like a
+/// `sudoers` NOPASSWD line); `deny` wins over `allow`.
+fn check_policy(
+    cfg: &ServiceConfig,
+    service: &str,
+    user: &str,
+    process: &ProcessInfo,
+    requesting_uid: u32,
+) -> Option<PamResultCode> {
+    let (event, rc) = match cfg.policy.decide(Some(&process.exe), None) {
+        PolicyDecision::Allow => ("auth.allow", PamResultCode::PAM_SUCCESS),
+        PolicyDecision::Deny => ("auth.deny", PamResultCode::PAM_AUTH_ERR),
+        PolicyDecision::Ask => return None,
+    };
+    if cfg.log_attempts {
+        let session = logfmt_session_for_pid(unsafe { libc_getppid() });
+        log::info!(
+            "event={event} source=policy user={} service={} process={} exe={} uid={}{}",
+            q(user),
+            q(service),
+            q(&process.name),
+            q(&process.exe),
+            requesting_uid,
+            session
+        );
+    }
+    Some(rc)
 }
 
 fn spawn_dialog(

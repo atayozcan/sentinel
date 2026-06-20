@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use sentinel_shared::log_kv::quote as q;
 use sentinel_shared::logfmt_session_for_pid;
-use sentinel_shared::{Outcome, ServiceConfig};
+use sentinel_shared::{Outcome, PolicyDecision, ServiceConfig};
 use std::time::Instant;
 
 pub struct AuthInputs<'a> {
@@ -31,6 +31,63 @@ pub struct AuthInputs<'a> {
 }
 
 pub async fn run(queue: ApprovalQueue, inputs: AuthInputs<'_>) -> Result<bool> {
+    // Static [policy] allow/deny, evaluated before the dialog. Matches
+    // on the subject's resolved exe path and/or the polkit action id;
+    // `deny` wins over `allow`. An allow short-circuits straight to the
+    // helper-1 hand-off (no dialog); a deny rejects without one.
+    match inputs.cfg.policy.decide(inputs.process_exe, Some(inputs.action_id)) {
+        PolicyDecision::Deny => {
+            let process_name = inputs
+                .process_exe
+                .and_then(sentinel_shared::process_basename)
+                .unwrap_or("unknown");
+            let session = inputs
+                .process_pid
+                .map(logfmt_session_for_pid)
+                .unwrap_or_default();
+            info!(
+                "event=auth.deny source=policy user={} action={} process={}{}",
+                q(inputs.username),
+                q(inputs.action_id),
+                q(process_name),
+                session
+            );
+            return Ok(false);
+        }
+        PolicyDecision::Allow => {
+            let process_name = inputs
+                .process_exe
+                .and_then(sentinel_shared::process_basename)
+                .unwrap_or("unknown");
+            let session = inputs
+                .process_pid
+                .map(logfmt_session_for_pid)
+                .unwrap_or_default();
+            info!(
+                "event=auth.allow source=policy user={} action={} process={}{}",
+                q(inputs.username),
+                q(inputs.action_id),
+                q(process_name),
+                session
+            );
+            queue.push(inputs.action_id.to_string()).await;
+            let success = helper1::run(helper1::Run {
+                username: inputs.username,
+                cookie: inputs.cookie,
+            })
+            .await
+            .context("run polkit-agent-helper-1")?;
+            if !success {
+                warn!(
+                    "event=auth.error source=agent.helper1 action={} note=\"helper-1 reported FAILURE — PAM stack rejected policy approval?\"",
+                    q(inputs.action_id)
+                );
+            }
+            return Ok(success);
+        }
+        PolicyDecision::Ask => {}
+    }
+
     let req = helper_ui::Request::for_action(helper_ui::ForAction {
         action_id: inputs.action_id,
         cfg: inputs.cfg,

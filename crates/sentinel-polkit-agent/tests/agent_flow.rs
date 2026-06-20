@@ -41,6 +41,7 @@ fn cfg() -> ServiceConfig {
         message: "test".into(),
         secondary: String::new(),
         sound_name: String::new(),
+        policy: Default::default(),
     }
 }
 
