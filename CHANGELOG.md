@@ -8,6 +8,25 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+New opt-in features (all default off, so existing configs are unchanged):
+
+- **`[policy]` allow/deny lists** — auto-allow or auto-deny before the
+  dialog, matched on the requesting binary's resolved exe path
+  (`/proc/<pid>/exe`, never `argv[0]`), its basename, or the polkit
+  action id. `deny` wins over `allow`.
+- **`[general].remember_seconds`** — `sudo`-timestamp-style window:
+  after an Allow, repeat requests from the same login session for the
+  same service + binary skip the dialog. Bound to `loginuid` + audit
+  `sessionid`; a root-owned `/run/sentinel/ts` store (boottime clock)
+  for sudo/su and an in-memory agent cache for polkit; capped at 900 s.
+- **`[notifications]`** — `on_deny` / `on_timeout` desktop notifications
+  on the polkit/GUI path (including silent policy denials).
+- **KDE helper localization** — the Plasma helper's UI chrome now
+  localizes from the system locale (en/de/es, via
+  `sentinel_shared::ui_i18n`), matching the COSMIC helper's behaviour.
+
 ## [0.9.0] — 2026-06-20
 
 **Monorepo release.** The former `sentinel-kde` and `sentinel-cosmic`
