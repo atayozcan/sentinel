@@ -166,6 +166,7 @@ mod tests {
             windowed,
             layer_shell,
             sound_name: String::new(),
+            remember_secs: 0,
         }
     }
 
