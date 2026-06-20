@@ -66,6 +66,13 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "toggleDetails"]
         fn toggle_details(self: Pin<&mut Self>);
+
+        /// Localized UI string lookup, replacing `qsTr()` in QML. Keys
+        /// like `"allow"`, `"deny"`, `"auto-deny-in"`; see
+        /// `sentinel_shared::ui_i18n`. Translations are shared with the
+        /// COSMIC frontend's locale set.
+        #[qinvokable]
+        fn translate(&self, key: &QString) -> QString;
     }
 }
 
@@ -204,6 +211,20 @@ impl qobject::DialogController {
         let shown = *self.show_details();
         self.as_mut().set_show_details(!shown);
     }
+
+    /// Localized UI string for `key` in the process UI language. Called
+    /// from QML in place of `qsTr()`.
+    pub fn translate(&self, key: &QString) -> QString {
+        QString::from(sentinel_shared::ui_i18n::translate(&key.to_string(), ui_lang()))
+    }
+}
+
+/// Process UI language (2-letter code), resolved once from the locale
+/// env. Cached so the per-string `translate` calls don't re-read env.
+fn ui_lang() -> &'static str {
+    use std::sync::OnceLock;
+    static LANG: OnceLock<String> = OnceLock::new();
+    LANG.get_or_init(sentinel_shared::ui_i18n::ui_lang).as_str()
 }
 
 /// Write the verdict the PAM module / polkit agent read, then exit with

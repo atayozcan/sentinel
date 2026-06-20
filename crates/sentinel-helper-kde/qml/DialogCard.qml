@@ -129,7 +129,7 @@ Item {
                     QQC2.Button {
                         visible: ctrl.hasDetails
                         flat: true
-                        text: ctrl.showDetails ? qsTr("Hide details") : qsTr("Show details")
+                        text: ctrl.showDetails ? ctrl.translate("hide-details") : ctrl.translate("show-details")
                         onClicked: ctrl.toggleDetails()
                     }
 
@@ -145,27 +145,27 @@ Item {
                             spacing: Kirigami.Units.smallSpacing
 
                             DetailRow {
-                                label: qsTr("Command")
+                                label: ctrl.translate("detail-command")
                                 value: ctrl.processCmdline
                                 visible: ctrl.processCmdline.length > 0
                             }
                             DetailRow {
-                                label: qsTr("PID")
+                                label: ctrl.translate("detail-pid")
                                 value: ctrl.processPid > 0 ? ("" + ctrl.processPid) : ""
                                 visible: ctrl.processPid > 0
                             }
                             DetailRow {
-                                label: qsTr("Working directory")
+                                label: ctrl.translate("detail-cwd")
                                 value: ctrl.processCwd
                                 visible: ctrl.processCwd.length > 0
                             }
                             DetailRow {
-                                label: qsTr("Requested by")
+                                label: ctrl.translate("detail-requested-by")
                                 value: ctrl.requestingUser
                                 visible: ctrl.requestingUser.length > 0
                             }
                             DetailRow {
-                                label: qsTr("Action")
+                                label: ctrl.translate("detail-action")
                                 value: ctrl.action
                                 visible: ctrl.action.length > 0
                             }
@@ -194,7 +194,7 @@ Item {
             }
             QQC2.Label {
                 visible: ctrl.timeoutSecs > 0
-                text: qsTr("Auto-deny in %1 s").arg(ctrl.remainingSecs)
+                text: ctrl.translate("auto-deny-in").arg(ctrl.remainingSecs)
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
                 opacity: 0.7
@@ -209,7 +209,7 @@ Item {
                 layoutDirection: ctrl.allowFirst ? Qt.LeftToRight : Qt.RightToLeft
 
                 QQC2.Button {
-                    text: qsTr("Allow")
+                    text: ctrl.translate("allow")
                     icon.name: "dialog-ok"
                     enabled: ctrl.allowEnabled
                     highlighted: true
@@ -217,7 +217,7 @@ Item {
                     onClicked: ctrl.allow()
                 }
                 QQC2.Button {
-                    text: qsTr("Deny")
+                    text: ctrl.translate("deny")
                     icon.name: "dialog-cancel"
                     Layout.fillWidth: true
                     onClicked: ctrl.deny()

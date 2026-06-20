@@ -34,6 +34,10 @@ use std::path::{Path, PathBuf};
 
 pub mod audit;
 
+/// UI-string localization for the KDE helper (the COSMIC helper uses
+/// fluent directly). Keyed lookups mirroring the fluent bundles.
+pub mod ui_i18n;
+
 /// CLI surface shared by the helper frontends (COSMIC + Plasma). Gated
 /// behind the `cli` feature so the PAM module and polkit agent — which
 /// never parse these args — don't pull in `clap`.
