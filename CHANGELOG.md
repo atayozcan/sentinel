@@ -8,7 +8,7 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.10.0] — 2026-06-20
 
 New opt-in features (all default off, so existing configs are unchanged):
 
@@ -16,16 +16,25 @@ New opt-in features (all default off, so existing configs are unchanged):
   dialog, matched on the requesting binary's resolved exe path
   (`/proc/<pid>/exe`, never `argv[0]`), its basename, or the polkit
   action id. `deny` wins over `allow`.
-- **`[general].remember_seconds`** — `sudo`-timestamp-style window:
-  after an Allow, repeat requests from the same login session for the
-  same service + binary skip the dialog. Bound to `loginuid` + audit
-  `sessionid`; a root-owned `/run/sentinel/ts` store (boottime clock)
-  for sudo/su and an in-memory agent cache for polkit; capped at 900 s.
+- **`[general].remember_seconds` + a "Remember" checkbox** —
+  `sudo`-timestamp-style window. When non-zero, the dialog shows a
+  **"Remember for N min" checkbox**; tick it and Allow to let repeat
+  requests from the same login session for the same service + binary
+  skip the dialog (opt-in **per request**, not a silent global). Bound
+  to `loginuid` + audit `sessionid`; a root-owned `/run/sentinel/ts`
+  store (boottime clock) for sudo/su and an in-memory agent cache for
+  polkit; capped at 900 s. Both the KDE and COSMIC helpers render it.
 - **`[notifications]`** — `on_deny` / `on_timeout` desktop notifications
   on the polkit/GUI path (including silent policy denials).
 - **KDE helper localization** — the Plasma helper's UI chrome now
-  localizes from the system locale (en/de/es, via
-  `sentinel_shared::ui_i18n`), matching the COSMIC helper's behaviour.
+  localizes from the system locale across all **12 locales** (en, de,
+  es, fr, it, ja, nl, pl, pt, ru, tr, zh), matching the COSMIC helper.
+
+Fixes:
+
+- **`packaging-kde/install.sh`** now works from a source checkout in the
+  monorepo (it had resolved `target/` and `config/` relative to the
+  wrong directory).
 
 ## [0.9.0] — 2026-06-20
 
