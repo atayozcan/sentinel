@@ -130,18 +130,18 @@ package() {
         "$pkgdir/usr/share/doc/$pkgname/su"
 
     # systemd USER service + auto-enable in graphical-session.target.
-    install -Dm644 packaging/systemd/user/sentinel-polkit-agent.service \
+    install -Dm644 packaging-kde/packaging/systemd/user/sentinel-polkit-agent.service \
         "$pkgdir/usr/lib/systemd/user/sentinel-polkit-agent.service"
     install -d "$pkgdir/usr/lib/systemd/user/graphical-session.target.wants"
     ln -s ../sentinel-polkit-agent.service \
         "$pkgdir/usr/lib/systemd/user/graphical-session.target.wants/sentinel-polkit-agent.service"
 
     # DBus system-bus policy for the pre-approval interface.
-    install -Dm644 packaging/dbus/org.sentinel.Agent.conf \
+    install -Dm644 packaging-kde/packaging/dbus/org.sentinel.Agent.conf \
         "$pkgdir/usr/share/dbus-1/system.d/org.sentinel.Agent.conf"
 
     # Polkit admin rule — wheel-group members can self-confirm.
-    install -Dm644 packaging/arch/49-sentinel-admin.rules \
+    install -Dm644 packaging-kde/packaging/arch/49-sentinel-admin.rules \
         "$pkgdir/etc/polkit-1/rules.d/49-sentinel-admin.rules"
 
     # Shell completions.
@@ -155,9 +155,9 @@ package() {
     # Man pages.
     install -Dm644 target/release/share/sentinel-polkit-agent.1 \
         "$pkgdir/usr/share/man/man1/sentinel-polkit-agent.1"
-    install -Dm644 packaging/man/sentinel.conf.5 \
+    install -Dm644 packaging-kde/packaging/man/sentinel.conf.5 \
         "$pkgdir/usr/share/man/man5/sentinel.conf.5"
-    install -Dm644 packaging/man/pam_sentinel.8 \
+    install -Dm644 packaging-kde/packaging/man/pam_sentinel.8 \
         "$pkgdir/usr/share/man/man8/pam_sentinel.8"
 
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

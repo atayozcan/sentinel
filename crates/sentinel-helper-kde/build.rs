@@ -12,6 +12,17 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 fn main() {
+    // GCC 16's -Wsfinae-incomplete fires inside Qt6's own headers (qchar.h)
+    // while compiling the generated cxx-qt bridge — it's Qt noise, not our
+    // code. cxx-qt compiles through the `cc` crate, which appends $CXXFLAGS,
+    // so silence it there (composes with makepkg's CXXFLAGS).
+    // SAFETY: build scripts run single-threaded before any threads are spawned.
+    unsafe {
+        let mut cxxflags = std::env::var("CXXFLAGS").unwrap_or_default();
+        cxxflags.push_str(" -Wno-sfinae-incomplete");
+        std::env::set_var("CXXFLAGS", cxxflags);
+    }
+
     // cxx-qt-build doesn't reliably emit rerun-if-changed for the QML, so a
     // bare `.qml` edit wouldn't re-embed the qrc — you'd ship stale UI.
     // Declare them explicitly so editing a dialog file triggers a rebuild.

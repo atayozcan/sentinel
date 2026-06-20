@@ -28,14 +28,16 @@ pacman can swap them in a single transaction.
 
 ```bash
 # From the repo root:
-cd packaging/arch
+cd packaging-kde/packaging/arch
 makepkg -Cs                   # clean tree, fetch makedepends
 sudo pacman -U sentinel-kde-*.pkg.tar.zst
 ```
 
-`makepkg --check` runs the workspace's pure-Rust tests (PAM module +
-agent + shared); the Qt/QML helper's unit tests are skipped because
-they need a Wayland compositor.
+`build()` compiles only this frontend + the backend
+(`-p sentinel-helper-kde -p sentinel-polkit-agent -p pam-sentinel`), so it
+never pulls libcosmic. There is no `check()`: `fmt`/`clippy`/tests run in CI
+(`ci.yml`) on every push and the AUR publish is gated on a green release, so
+re-running the suite on every install would be redundant build time.
 
 ## Submitting to AUR (first time)
 
