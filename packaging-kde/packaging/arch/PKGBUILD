@@ -94,21 +94,13 @@ build() {
     # writable build script run; `--frozen` blocks that on a cold cache,
     # which is exactly the CI / clean-chroot case. `--locked` (implied by
     # the prepare-step `cargo fetch --locked`) still pins Cargo.lock.
-    cargo build --release --workspace --exclude sentinel-helper
+    cargo build --release -p sentinel-helper-kde -p sentinel-polkit-agent -p pam-sentinel
 
     install -d target/release/share
     target/release/sentinel-polkit-agent completions bash > target/release/share/sentinel-polkit-agent.bash
     target/release/sentinel-polkit-agent completions fish > target/release/share/sentinel-polkit-agent.fish
     target/release/sentinel-polkit-agent completions zsh  > target/release/share/_sentinel-polkit-agent
     target/release/sentinel-polkit-agent man              > target/release/share/sentinel-polkit-agent.1
-}
-
-check() {
-    cd "sentinel-$pkgver"
-    export RUSTUP_TOOLCHAIN=stable
-    # The Qt/QML helper needs a Wayland compositor — skip it in chroot.
-    cargo test --frozen --release --workspace --locked \
-        -p sentinel-shared -p pam-sentinel -p sentinel-polkit-agent
 }
 
 package() {

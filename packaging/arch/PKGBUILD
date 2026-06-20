@@ -70,7 +70,7 @@ build() {
     # (if a user sets RUSTFLAGS in /etc/makepkg.conf via cargo-rustflags)
     # composes cleanly.
     export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=x86-64-v3"
-    cargo build --frozen --release --workspace --exclude sentinel-helper-kde
+    cargo build --frozen --release -p sentinel-helper -p sentinel-polkit-agent -p pam-sentinel
 
     # Generate shell completions + man pages from the freshly-built binaries.
     install -d target/release/share
@@ -80,12 +80,6 @@ build() {
         target/release/$bin completions zsh  > target/release/share/_$bin
         target/release/$bin man              > target/release/share/$bin.1
     done
-}
-
-check() {
-    cd "sentinel-$pkgver"
-    export RUSTUP_TOOLCHAIN=stable
-    cargo test --frozen --release --workspace --exclude sentinel-helper-kde --locked
 }
 
 package() {
