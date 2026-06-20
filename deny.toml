@@ -31,6 +31,12 @@ ignore = [
     # code path. Drop when libcosmic's wgpu chain no longer pulls
     # `paste`.
     "RUSTSEC-2024-0436",
+    # `proc-macro-error2 2.0.1` is unmaintained. Pulled in transitively
+    # via libcosmic → i18n-embed-fl (a build-time proc-macro for
+    # compile-time fluent localisation). It runs only at build time and
+    # never ships in the auth-path binaries. Drop when i18n-embed-fl
+    # moves off proc-macro-error2.
+    "RUSTSEC-2026-0173",
 ]
 
 # ----------------------------------------------------------------------
