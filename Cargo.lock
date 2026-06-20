@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "pam-sentinel"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "log",
  "nix",
@@ -1113,7 +1113,7 @@ checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "sentinel-helper-kde"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "cxx",
  "cxx-qt",
@@ -1126,7 +1126,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-polkit-agent"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1144,7 +1144,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-shared"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "clap",
  "log",

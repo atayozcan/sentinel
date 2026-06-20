@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Maintainer: Atay Özcan <atay@oezcan.me>
 pkgname=sentinel-kde
-pkgver=0.8.0
-pkgrel=3
+pkgver=0.8.1
+pkgrel=1
 install=sentinel-kde.install
 # Cargo.toml's release profile strips symbols at link time, so makepkg's
 # debug-package generator has nothing to index — opt out to silence the
