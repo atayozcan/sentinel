@@ -35,3 +35,6 @@ core
 # Local task scratch
 /TODO
 /.notes/
+
+# cxx-qt qmlls config — generated, contains a machine-local buildDir
+.qmlls.ini
