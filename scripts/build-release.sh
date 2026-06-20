@@ -32,7 +32,7 @@ mkdir -p "$DIST"
 
 echo "==> Building release ($VERSION, $ARCH)…"
 SENTINEL_PREFIX=/usr SENTINEL_SYSCONFDIR=/etc SENTINEL_LIBEXECDIR=lib \
-    cargo build --release --workspace --locked
+    cargo build --release --workspace --exclude sentinel-helper-kde --locked
 
 # ---------------------------------------------------------------------------
 # Generate completions + man pages from the freshly-built binaries. Lives

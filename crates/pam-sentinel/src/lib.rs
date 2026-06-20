@@ -39,8 +39,9 @@ struct PamSentinel;
 pam::pam_hooks!(PamSentinel);
 
 impl PamHooks for PamSentinel {
-    fn sm_authenticate(pamh: &mut PamHandle, _args: Vec<&CStr>, _flags: PamFlag) -> PamResultCode {
-        init_logger();
+    fn sm_authenticate(pamh: &mut PamHandle, args: Vec<&CStr>, _flags: PamFlag) -> PamResultCode {
+        let debug = args.iter().any(|a| a.to_bytes() == b"debug");
+        init_logger(debug);
 
         if let Some(rc) = agent_bypass::check_agent_bypass(pamh) {
             return rc;
@@ -238,10 +239,17 @@ fn spawn_dialog(
 
 // -------------- module init -----------------------------------------------
 
-fn init_logger() {
+fn init_logger(debug: bool) {
     use std::sync::Once;
     static ONCE: Once = Once::new();
-    ONCE.call_once(|| audit::init_syslog(MODULE_NAME, log::LevelFilter::Info));
+    ONCE.call_once(|| {
+        let level = if debug {
+            log::LevelFilter::Debug
+        } else {
+            log::LevelFilter::Info
+        };
+        audit::init_syslog(MODULE_NAME, level)
+    });
 }
 
 // -------------- libc shims + caller-uid lookup ----------------------------

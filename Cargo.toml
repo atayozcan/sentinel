@@ -3,15 +3,25 @@ resolver = "2"
 members = [
     "crates/pam-sentinel",
     "crates/sentinel-shared",
-    "crates/sentinel-helper",
+    "crates/sentinel-polkit-agent",
+    "crates/sentinel-helper",       # COSMIC / libcosmic frontend
+    "crates/sentinel-helper-kde",   # KDE Plasma / Kirigami frontend
+]
+# Both helpers pull a heavy GUI toolchain (libcosmic / Qt + cxx-qt). Keep
+# them out of the default set so a bare `cargo build` / `cargo test` builds
+# the pure-Rust auth-path backend (PAM module + agent) without any GUI
+# deps. Build a GUI explicitly with `cargo build -p sentinel-helper[-kde]`.
+default-members = [
+    "crates/pam-sentinel",
+    "crates/sentinel-shared",
     "crates/sentinel-polkit-agent",
 ]
 
 [workspace.package]
-version = "0.8.1"
+version = "0.9.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/atayozcan/sentinel-cosmic"
+repository = "https://github.com/atayozcan/sentinel"
 authors = ["Atay Özcan <atay@oezcan.me>"]
 rust-version = "1.85"
 

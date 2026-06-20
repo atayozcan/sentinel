@@ -167,6 +167,15 @@ install_file 644 config/polkit-1                      "$SYSCONFDIR/pam.d/polkit-
 install_file 644 packaging/xdg-autostart/sentinel-polkit-agent.desktop \
     "$SYSCONFDIR/xdg/autostart/sentinel-polkit-agent.desktop"
 
+# System-bus policy for the agent's bypass interface (org.sentinel.Agent).
+# pam_sentinel.so (root, inside polkit-agent-helper-1) calls TakeApproval
+# over D-Bus to consume a one-shot pre-approval. This rides the existing
+# policykit_t -> userdomain `dbus send_msg` allow, so it works under
+# SELinux — unlike the old unix-socket path. Required for the bypass.
+install_file 644 packaging/dbus/org.sentinel.Agent.conf \
+    "$PREFIX/share/dbus-1/system.d/org.sentinel.Agent.conf"
+systemctl reload dbus.service 2>/dev/null || systemctl reload dbus-broker.service 2>/dev/null || true
+
 # Drop-in disabling ProtectHome=yes on the system polkit-agent-helper@
 # unit. Without this, /run/user/<uid> is masked inside helper-1's
 # sandbox and pam_sentinel.so can't reach the agent's bypass socket.

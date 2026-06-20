@@ -1,0 +1,14 @@
+// SPDX-FileCopyrightText: 2026 Atay Özcan <atay@oezcan.me>
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Sentinel-KDE: wheel-group members are polkit administrators so they can
+// self-confirm via the Sentinel dialog (UAC-style — no separate admin
+// password). Mirrors Arch's default polkit admin model.
+//
+// To tighten to specific users, drop a higher-numbered rule (e.g.
+// /etc/polkit-1/rules.d/50-sentinel-admin.rules) that returns a narrower
+// identity list — rules.d files are processed in lexical order and later
+// rules override earlier ones.
+polkit.addAdminRule(function(_action, _subject) {
+    return ["unix-group:wheel"];
+});

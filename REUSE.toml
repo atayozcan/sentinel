@@ -30,7 +30,7 @@ SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
 [[annotations]]
-path = ["packaging/man/*.5", "packaging/man/*.8"]
+path = ["packaging/man/*.5", "packaging/man/*.8", "packaging-kde/packaging/man/*.5", "packaging-kde/packaging/man/*.8"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025 Atay Özcan <atay@oezcan.me>"
 SPDX-License-Identifier = "GPL-3.0-or-later"

@@ -17,5 +17,8 @@ pam-bindings = "0.3"
 sentinel-shared = { path = "../sentinel-shared" }
 log.workspace = true
 nix.workspace = true
+# Blocking system-bus client for the agent bypass handshake (pure Rust, no
+# libdbus build dep). Default features give the async-io backend + blocking API.
+zbus = "5"
 
 [build-dependencies]

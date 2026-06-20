@@ -69,7 +69,9 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        # The KDE helper needs Qt6/KF6 (not on the Ubuntu runner); it gets
+        # its own openSUSE container job below. Exclude it here.
+        run: cargo clippy --workspace --exclude sentinel-helper-kde --all-targets -- -D warnings
 
   # ---------------------------------------------------------------------------
   # Tests. Runs against stable Rust on Linux. The PAM module is a cdylib
@@ -101,7 +103,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: cargo test (workspace)
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --exclude sentinel-helper-kde --locked
 
   # ---------------------------------------------------------------------------
   # Smoke build of the full workspace on both x86_64 and aarch64. The
@@ -137,7 +139,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: cargo build --release
-        run: cargo build --release --workspace --locked
+        run: cargo build --release --workspace --exclude sentinel-helper-kde --locked
 
   # ---------------------------------------------------------------------------
   # Security audit of the dependency tree against the RustSec advisory
@@ -173,7 +175,13 @@ jobs:
         #   ships all backends in Cargo.lock regardless of target.
         #   Drop this when libcosmic ships a wgpu version whose
         #   transitive deps no longer include `paste`.
-        run: cargo audit --deny warnings --ignore RUSTSEC-2024-0436
+        #
+        # RUSTSEC-2026-0173 — `proc-macro-error2` is unmaintained.
+        #   Pulled in transitively via libcosmic → i18n-embed-fl, a
+        #   build-time proc-macro for compile-time fluent localisation.
+        #   Build-time only; never ships in the auth-path binaries.
+        #   Drop when i18n-embed-fl moves off proc-macro-error2.
+        run: cargo audit --deny warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2026-0173
 
   # ---------------------------------------------------------------------------
   # `cargo deny` — license / source / banned-crate enforcement.
@@ -281,7 +289,7 @@ jobs:
           cargo install --locked cargo-generate-rpm
 
       - name: Build release artefacts
-        run: cargo build --release --workspace --locked
+        run: cargo build --release --workspace --exclude sentinel-helper-kde --locked
 
       - name: Generate completions + man pages
         # cargo-deb / generate-rpm reference these as assets.
@@ -299,3 +307,38 @@ jobs:
 
       - name: cargo generate-rpm
         run: cargo generate-rpm -p crates/sentinel-helper
+
+  # ---------------------------------------------------------------------------
+  # KDE / Plasma helper (sentinel-helper-kde). Needs Qt6 + KF6 + cxx-qt's
+  # transitive private headers — the openSUSE Tumbleweed image ships them
+  # without the apt-side KF6 packaging headaches. It's excluded from the
+  # Ubuntu workspace jobs above (no Qt there) and built + linted here, in
+  # the same container the release workflow uses.
+  # ---------------------------------------------------------------------------
+  helper-kde:
+    name: build helper (Qt6 / KF6)
+    runs-on: ubuntu-latest
+    container: registry.opensuse.org/opensuse/tumbleweed:latest
+    steps:
+      - name: Install toolchain + Qt/KF6 deps
+        # mold too, to satisfy the workflow-level RUSTFLAGS link-arg.
+        run: >
+          zypper -n install --no-recommends git tar gzip gcc gcc-c++ make mold
+          rust cargo pam-devel
+          qt6-base-devel qt6-base-private-devel
+          qt6-declarative-devel qt6-declarative-private-devel
+          kf6-kirigami-imports kf6-qqc2-desktop-style
+          layer-shell-qt6-imports kf6-breeze-icons qt6-wayland
+
+      - uses: actions/checkout@v6
+
+      - name: Mark workspace safe for git
+        # The container mounts the workspace with a different owner; git
+        # bails on "dubious ownership" without this opt-in.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: cargo clippy (kde helper)
+        run: cargo clippy -p sentinel-helper-kde --all-targets -- -D warnings
+
+      - name: cargo build (kde helper, release)
+        run: cargo build --release -p sentinel-helper-kde --locked

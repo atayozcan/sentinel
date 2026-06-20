@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
 name: release
 
 on:
@@ -5,36 +7,27 @@ on:
     tags:
       - 'v*'
 
-# Don't cancel an in-flight release if a second tag is pushed before
-# the first finishes — unlike CI on PRs, partial releases are bad
-# (half-uploaded artifacts, draft GH release with missing assets).
-# Queue the second one instead.
+# Don't cancel an in-flight release if a second tag is pushed before the
+# first finishes — partial releases (half-uploaded assets, a draft GH
+# release missing artefacts) are worse than queuing.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# Default to read-only for the workflow; jobs that need to create
-# releases / push attestations / publish to AUR override below with
-# explicit narrow scopes. Scorecard's TokenPermissionsID rule is
-# unhappy when broad write perms are at the top level.
 permissions:
   contents: read
 
 env:
-  # Use mold for faster linking; doesn't affect the shipped binary
-  # beyond build-id. Each matrix job's apt-get installs mold before
-  # cargo runs. See ci.yml for the same setup on PR builds.
   RUSTFLAGS: -C link-arg=-fuse-ld=mold
 
 jobs:
-  build:
-    name: build (${{ matrix.target }})
+  # ===========================================================================
+  # COSMIC frontend bundle (+ .deb / .rpm). Ubuntu runners, x86_64 + aarch64.
+  # ===========================================================================
+  build-cosmic:
+    name: build cosmic (${{ matrix.arch }})
     runs-on: ${{ matrix.runs-on }}
     permissions:
-      # Sigstore attestation upload binds the artifact's sha256 to
-      # the workflow's OIDC identity (the binding stays on the repo's
-      # /attestations endpoint, not here). Verify downstream with
-      # `gh attestation verify <file> --repo atayozcan/sentinel`.
       id-token: write
       attestations: write
       contents: read
@@ -42,34 +35,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            arch: x86_64
-            deb-arch: amd64
+          - arch: x86_64
             runs-on: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            arch: aarch64
-            deb-arch: arm64
+          - arch: aarch64
             runs-on: ubuntu-24.04-arm
-
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libpam0g-dev \
-            libxkbcommon-dev \
-            libwayland-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            pkg-config \
-            mold
+            libpam0g-dev libxkbcommon-dev libwayland-dev \
+            libfontconfig1-dev libfreetype6-dev pkg-config mold
 
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -81,31 +64,19 @@ jobs:
 
       - name: Resolve version
         id: ver
-        run: |
-          v="${GITHUB_REF_NAME#v}"
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Build tarballs
+      - name: Build tarballs (cosmic)
         run: ./scripts/build-release.sh "${{ steps.ver.outputs.version }}"
 
       - name: Build .deb
         run: |
           cargo deb --no-build -p sentinel-helper
-          mkdir -p dist
-          mv target/debian/*.deb dist/
+          mkdir -p dist && mv target/debian/*.deb dist/
 
       - name: Build .rpm
-        run: |
-          # cargo-generate-rpm reads paths relative to the workspace root
-          cd "$GITHUB_WORKSPACE"
-          cargo generate-rpm -p crates/sentinel-helper --output dist/
+        run: cargo generate-rpm -p crates/sentinel-helper --output dist/
 
-      # Sigstore artifact attestations. Each .deb / .rpm / .tar.gz
-      # gets a signed bundle proving it was built by THIS workflow run
-      # at this commit. Stored on the repo's attestations endpoint;
-      # consumers verify with:
-      #   gh attestation verify <file> --repo atayozcan/sentinel
-      # Documented in SECURITY.md → Threat model → Supply-chain integrity.
       - name: Attest release artefacts
         uses: actions/attest-build-provenance@v4
         with:
@@ -117,24 +88,85 @@ jobs:
       - name: Upload artefacts
         uses: actions/upload-artifact@v7
         with:
-          name: sentinel-${{ steps.ver.outputs.version }}-${{ matrix.arch }}
+          name: cosmic-${{ steps.ver.outputs.version }}-${{ matrix.arch }}
           path: dist/
 
+  # ===========================================================================
+  # KDE/Plasma frontend bundle. openSUSE Tumbleweed container (Qt6 + KF6),
+  # x86_64 + aarch64. Tarball-only (ships via AUR + source bundle).
+  # ===========================================================================
+  build-kde:
+    name: build kde (${{ matrix.arch }})
+    runs-on: ${{ matrix.runs-on }}
+    container: registry.opensuse.org/opensuse/tumbleweed:latest
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Install toolchain + Qt/KF6 deps
+        # Tumbleweed is rolling: a referenced RPM can rotate off the mirror
+        # between metadata build and download (a 404). Refresh first and
+        # retry the whole install a few times to ride out mirror lag.
+        run: |
+          for attempt in 1 2 3; do
+            zypper -n refresh && zypper -n install --no-recommends \
+              git tar gzip gcc gcc-c++ make mold \
+              rust cargo pam-devel \
+              qt6-base-devel qt6-base-private-devel \
+              qt6-declarative-devel qt6-declarative-private-devel \
+              kf6-kirigami-imports kf6-qqc2-desktop-style \
+              layer-shell-qt6-imports kf6-breeze-icons qt6-wayland && break
+            echo "zypper attempt $attempt failed; retrying in 15s…" >&2
+            sleep 15
+          done
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Resolve version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build tarballs (kde)
+        run: ./packaging-kde/scripts/build-release.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Attest release artefacts
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/*.tar.gz
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: kde-${{ steps.ver.outputs.version }}-${{ matrix.arch }}
+          path: dist/
+
+  # ===========================================================================
+  # Single GitHub release carrying both frontends' bundles.
+  # ===========================================================================
   release:
-    needs: build
+    needs: [build-cosmic, build-kde]
     runs-on: ubuntu-latest
     permissions:
-      # gh release create needs write on contents to create the
-      # release object and upload assets.
       contents: write
     steps:
       - uses: actions/checkout@v6
 
       - name: Verify release-notes file exists
-        # Fail fast if the release-notes/v$VERSION.md is missing — gh
-        # release create with --notes-file would otherwise error out
-        # AFTER tagging and uploading artefacts, leaving us with a
-        # half-published release.
         run: |
           v="${GITHUB_REF_NAME#v}"
           if [ ! -f ".github/release-notes/v$v.md" ]; then
@@ -150,11 +182,12 @@ jobs:
       - name: Flatten
         run: |
           mkdir -p dist
-          # Each artefact has a unique name across the matrix (the
-          # source tarball + its sha256 are produced only on x86_64,
-          # everything else is per-arch named), so a plain mv is safe
-          # — no collisions to worry about.
-          find artefacts -type f \( -name '*.tar.gz' -o -name '*.sha256' -o -name '*.deb' -o -name '*.rpm' \) -exec mv -t dist/ {} +
+          # Asset names are unique across both frontends (cosmic = sentinel-*,
+          # kde = sentinel-kde-*; per-arch deb/rpm carry the arch), so a plain
+          # mv has no collisions.
+          find artefacts -type f \
+            \( -name '*.tar.gz' -o -name '*.sha256' -o -name '*.deb' -o -name '*.rpm' \) \
+            -exec mv -t dist/ {} +
           ls -la dist
 
       - name: Create release
@@ -163,75 +196,58 @@ jobs:
         run: |
           v="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" \
-            --title "Sentinel-COSMIC v$v" \
-            --notes-file .github/release-notes/v$v.md \
+            --title "Sentinel v$v" \
+            --notes-file ".github/release-notes/v$v.md" \
             dist/*
 
-  # ---------------------------------------------------------------------------
-  # AUR publish.
-  #
-  # Runs after `release` because the stable PKGBUILD's `source=` URL is
-  # GitHub's auto-generated tag tarball, which exists as soon as the tag
-  # is pushed — so technically we don't need `release` to finish. But
-  # gating on it ensures we only publish to AUR when the build + release
-  # actually succeeded, avoiding "tag exists, AUR updated, but release
-  # is broken" states.
-  #
-  # Secrets required (set under repo Settings → Secrets and variables →
-  # Actions):
-  #   AUR_SSH_PRIVATE_KEY  — private half of an ed25519 key whose public
-  #                          half is registered on the AUR account
-  #                          (https://aur.archlinux.org/account/sipsip,
-  #                          "SSH Public Key" field). Must be AUR-only;
-  #                          do NOT reuse your personal key.
-  #
-  # First-time bootstrap is still manual — the action pushes to an
-  # existing AUR repo, it doesn't create one. See packaging/arch/README.md
-  # for the one-time `git clone ssh://aur@aur.archlinux.org/<pkg>.git`
-  # step.
-  #
-  # We deliberately do NOT run a clean-chroot `makepkg -s` here:
-  # `release.yml`'s `build` job already did `cargo build --release
-  # --workspace --locked` with the same SENTINEL_* env vars the
-  # PKGBUILDs use, and a second build with libcosmic from git would
-  # add ~10 minutes per matrix entry for marginal value. The action's
-  # built-in `.SRCINFO` generation catches PKGBUILD syntax errors, and
-  # `updpkgsums` catches a wrong source URL. If you ever want a real
-  # chroot smoke-test, drop in `extra-x86_64-build` from
-  # `archlinux/devtools` before the deploy step.
-  # `sentinel-cosmic` stable only — the `-git` AUR slot was dropped because
-  # KSXGitHub's deploy-aur runs `updpkgsums`, which clones a VCS PKGBUILD's
-  # `source=("…::git+…")` into the AUR working tree, and AUR rejects
-  # pushes whose commit contains any subdirectory. Canonical AUR package
-  # is stable-only; install from this repo directly for VCS tracking.
-  publish-aur:
+  # ===========================================================================
+  # AUR publish — one package per frontend, both sourced from this monorepo's
+  # tag tarball. Gated on `release` so AUR only moves when the build + release
+  # succeeded. Requires secret AUR_SSH_PRIVATE_KEY (AUR-only ed25519 key).
+  # ===========================================================================
+  publish-aur-cosmic:
     needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v6
-
       - name: Stage PKGBUILD + install hook
         run: |
           mkdir -p aur-stage
           cp packaging/arch/PKGBUILD aur-stage/PKGBUILD
           cp packaging/arch/sentinel-cosmic.install aur-stage/
-
-      # Pin to a tagged release (not @master) so a hijacked action can't
-      # silently push to AUR with our key. Bump deliberately. Latest
-      # versions: https://github.com/KSXGitHub/github-actions-deploy-aur/releases
-      #
-      # v2.7.2 broke against the 2026-04 archlinux:base image with
-      # `==> ERROR: There is no secret key available to sign with.`;
-      # v4.1.3 (used here) has the docker-image fix that disables
-      # signing properly.
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: sentinel-cosmic
           pkgbuild: aur-stage/PKGBUILD
           assets: aur-stage/sentinel-cosmic.install
+          commit_username: sipsip
+          commit_email: atayozcan@pm.me
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Release ${{ github.ref_name }}"
+          updpkgsums: true
+          ssh_keyscan_types: rsa,ed25519
+
+  publish-aur-kde:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Stage PKGBUILD + install hook
+        run: |
+          mkdir -p aur-stage
+          cp packaging-kde/packaging/arch/PKGBUILD aur-stage/PKGBUILD
+          cp packaging-kde/packaging/arch/sentinel-kde.install aur-stage/
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+        with:
+          pkgname: sentinel-kde
+          pkgbuild: aur-stage/PKGBUILD
+          assets: aur-stage/sentinel-kde.install
           commit_username: sipsip
           commit_email: atayozcan@pm.me
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
