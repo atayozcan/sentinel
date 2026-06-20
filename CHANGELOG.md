@@ -8,6 +8,23 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] — 2026-06-20
+
+Packaging hotfix for 0.11.0 — no runtime, config, or auth-path change.
+
+- **`sentinel-kde` now installs.** `package()` pulled its systemd user
+  service and polkit admin rule from `packaging/` (repo root), but
+  post-monorepo the KDE-specific assets live under `packaging-kde/packaging/`,
+  so `makepkg` failed in `package()`. All KDE assets are now sourced from
+  `packaging-kde/packaging/`. (CI builds tarballs but never runs `package()`,
+  so it slipped through every release.)
+- **Quieted the cxx-qt build** — GCC 16's `-Wsfinae-incomplete` (fired inside
+  Qt6's `qchar.h`, not our code) is suppressed via `CXXFLAGS` in the KDE
+  helper's `build.rs`.
+- **AUR repo hygiene** — stopped tracking release source tarballs (an
+  `updpkgsums` side-effect committed them every release) and added a
+  `.gitignore`.
+
 ## [0.11.0] — 2026-06-20
 
 Packaging-only release — no changes to runtime behaviour, config, or the
