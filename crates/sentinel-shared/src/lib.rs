@@ -174,7 +174,11 @@ pub struct Notifications {
 /// session (the agent), not the root PAM module.
 pub fn desktop_notify(summary: &str, body: &str) {
     let _ = std::process::Command::new("notify-send")
-        .args(["--app-name=Sentinel", "--icon=system-lock-screen", "--urgency=normal"])
+        .args([
+            "--app-name=Sentinel",
+            "--icon=system-lock-screen",
+            "--urgency=normal",
+        ])
         .arg(summary)
         .arg(body)
         .stdin(std::process::Stdio::null())
@@ -966,10 +970,19 @@ mod tests {
     #[test]
     fn policy_allow_matches_basename_and_full_path() {
         let p = policy(&["pacman", "/usr/bin/topgrade"], &[]);
-        assert_eq!(p.decide(Some("/usr/bin/pacman"), None), PolicyDecision::Allow);
-        assert_eq!(p.decide(Some("/usr/bin/topgrade"), None), PolicyDecision::Allow);
+        assert_eq!(
+            p.decide(Some("/usr/bin/pacman"), None),
+            PolicyDecision::Allow
+        );
+        assert_eq!(
+            p.decide(Some("/usr/bin/topgrade"), None),
+            PolicyDecision::Allow
+        );
         // basename entry must not match a different path's basename
-        assert_eq!(p.decide(Some("/opt/evil/pacman"), None), PolicyDecision::Allow);
+        assert_eq!(
+            p.decide(Some("/opt/evil/pacman"), None),
+            PolicyDecision::Allow
+        );
         // full-path entry must not match by basename alone
         assert_eq!(p.decide(Some("/opt/topgrade"), None), PolicyDecision::Ask);
     }
@@ -977,14 +990,20 @@ mod tests {
     #[test]
     fn policy_deny_wins_over_allow() {
         let p = policy(&["pacman"], &["pacman"]);
-        assert_eq!(p.decide(Some("/usr/bin/pacman"), None), PolicyDecision::Deny);
+        assert_eq!(
+            p.decide(Some("/usr/bin/pacman"), None),
+            PolicyDecision::Deny
+        );
     }
 
     #[test]
     fn policy_matches_polkit_action_id() {
         let p = policy(&["org.freedesktop.policykit.exec"], &[]);
         assert_eq!(
-            p.decide(Some("/usr/bin/pkexec"), Some("org.freedesktop.policykit.exec")),
+            p.decide(
+                Some("/usr/bin/pkexec"),
+                Some("org.freedesktop.policykit.exec")
+            ),
             PolicyDecision::Allow
         );
         // action-only entry, no exe match
@@ -1003,7 +1022,8 @@ mod tests {
         .unwrap();
         assert_eq!(doc.policy.allow.len(), 2);
         assert_eq!(
-            doc.policy.decide(None, Some("org.freedesktop.systemd1.manage-units")),
+            doc.policy
+                .decide(None, Some("org.freedesktop.systemd1.manage-units")),
             PolicyDecision::Deny
         );
     }

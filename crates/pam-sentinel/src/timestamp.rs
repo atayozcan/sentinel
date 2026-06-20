@@ -177,7 +177,8 @@ fn ensure_dir(dir: &Path, strict: bool) -> std::io::Result<()> {
     for p in chain {
         match fs::symlink_metadata(p) {
             Ok(meta) => {
-                let bad = !meta.is_dir() || (strict && (meta.uid() != 0 || meta.mode() & 0o077 != 0));
+                let bad =
+                    !meta.is_dir() || (strict && (meta.uid() != 0 || meta.mode() & 0o077 != 0));
                 if bad {
                     return Err(std::io::Error::other(format!(
                         "{} is not a root-owned 0700 directory",
@@ -233,7 +234,12 @@ mod tests {
         // different service / exe / session / user must NOT match
         assert!(is_fresh_in(&sub, &b("sudo", "/usr/bin/pacman"), 60, false));
         assert!(!is_fresh_in(&sub, &b("su", "/usr/bin/pacman"), 60, false));
-        assert!(!is_fresh_in(&sub, &b("sudo", "/usr/bin/topgrade"), 60, false));
+        assert!(!is_fresh_in(
+            &sub,
+            &b("sudo", "/usr/bin/topgrade"),
+            60,
+            false
+        ));
         let mut other_session = b("sudo", "/usr/bin/pacman");
         other_session.sessionid = 99;
         assert!(!is_fresh_in(&sub, &other_session, 60, false));

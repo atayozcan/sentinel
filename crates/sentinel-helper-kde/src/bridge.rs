@@ -215,7 +215,10 @@ impl qobject::DialogController {
     /// Localized UI string for `key` in the process UI language. Called
     /// from QML in place of `qsTr()`.
     pub fn translate(&self, key: &QString) -> QString {
-        QString::from(sentinel_shared::ui_i18n::translate(&key.to_string(), ui_lang()))
+        QString::from(sentinel_shared::ui_i18n::translate(
+            &key.to_string(),
+            ui_lang(),
+        ))
     }
 }
 

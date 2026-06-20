@@ -40,7 +40,11 @@ pub async fn run(
     // on the subject's resolved exe path and/or the polkit action id;
     // `deny` wins over `allow`. An allow short-circuits straight to the
     // helper-1 hand-off (no dialog); a deny rejects without one.
-    match inputs.cfg.policy.decide(inputs.process_exe, Some(inputs.action_id)) {
+    match inputs
+        .cfg
+        .policy
+        .decide(inputs.process_exe, Some(inputs.action_id))
+    {
         PolicyDecision::Deny => {
             let process_name = inputs
                 .process_exe
@@ -104,7 +108,11 @@ pub async fn run(
     // grant for this (action, exe) auto-allows without a dialog.
     if inputs.cfg.remember_seconds > 0
         && remember
-            .is_fresh(inputs.action_id, inputs.process_exe, inputs.cfg.remember_seconds)
+            .is_fresh(
+                inputs.action_id,
+                inputs.process_exe,
+                inputs.cfg.remember_seconds,
+            )
             .await
     {
         let process_name = inputs
@@ -188,7 +196,9 @@ pub async fn run(
             if inputs.cfg.notify_on_timeout {
                 sentinel_shared::desktop_notify(
                     "Authentication timed out",
-                    &format!("An elevation request from {process_name} was auto-denied (no response)."),
+                    &format!(
+                        "An elevation request from {process_name} was auto-denied (no response)."
+                    ),
                 );
             }
             return Ok(false);
