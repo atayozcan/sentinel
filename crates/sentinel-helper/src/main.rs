@@ -5,7 +5,7 @@ mod audio;
 mod cli;
 mod i18n;
 
-use app::{ConfirmApp, loaded_outcome};
+use app::{ConfirmApp, loaded_outcome, loaded_remember};
 use clap::{CommandFactory, Parser};
 use cli::{Args, GenSubcommand, RenderMode};
 use std::sync::Arc;
@@ -68,9 +68,12 @@ fn main() -> anyhow::Result<()> {
     cosmic::app::run::<ConfirmApp>(settings, Arc::new(args))
         .map_err(|e| anyhow::anyhow!("cosmic app error: {e}"))?;
 
-    let outcome = loaded_outcome();
-    println!("{outcome}");
-    std::process::exit(outcome.exit_code());
+    let verdict = sentinel_shared::Verdict {
+        outcome: loaded_outcome(),
+        remember: loaded_remember(),
+    };
+    println!("{verdict}");
+    std::process::exit(verdict.outcome.exit_code());
 }
 
 fn run_gen(g: &GenSubcommand) -> anyhow::Result<()> {

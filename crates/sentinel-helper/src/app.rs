@@ -10,11 +10,11 @@ use cosmic::iced::platform_specific::shell::commands::layer_surface::{
 };
 use cosmic::iced::time::{self, Duration, Instant};
 use cosmic::iced::{Background, Border, Color, Length, Shadow, Subscription, window};
-use cosmic::widget::{button, column, container, progress_bar, row, scrollable, text};
+use cosmic::widget::{button, checkbox, column, container, progress_bar, row, scrollable, text};
 use cosmic::{Action, Application, Element, Task, executor, theme};
 use sentinel_shared::Outcome;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 /// Process-wide outcome cell. The application writes here on close so that
 /// `main` can output the final result after `cosmic::app::run` returns.
@@ -42,6 +42,19 @@ pub fn loaded_outcome() -> Outcome {
     }
 }
 
+/// Whether the user ticked the "remember" checkbox on an Allow. Read by
+/// `main` to build the [`sentinel_shared::Verdict`] line. Same static-cell
+/// pattern as [`OUTCOME`].
+pub(crate) static REMEMBER: AtomicBool = AtomicBool::new(false);
+
+pub fn store_remember(remember: bool) {
+    REMEMBER.store(remember, Ordering::SeqCst);
+}
+
+pub fn loaded_remember() -> bool {
+    REMEMBER.load(Ordering::SeqCst)
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     Tick(Instant),
@@ -49,6 +62,7 @@ pub enum Message {
     Deny,
     Escape,
     ToggleDetails,
+    ToggleRemember(bool),
 }
 
 pub struct ConfirmApp {
@@ -60,6 +74,8 @@ pub struct ConfirmApp {
     allow_enabled: bool,
     finished: bool,
     show_details: bool,
+    /// "Remember" opt-in checkbox state (shown when remember_secs > 0).
+    remember_checked: bool,
     surface_id: Option<window::Id>,
     /// Resolved icon for the requesting executable, if the icon theme
     /// has a match for the basename. `None` means "no theme match —
@@ -96,6 +112,7 @@ impl Application for ConfirmApp {
             allow_enabled: false,
             finished: false,
             show_details: false,
+            remember_checked: false,
             surface_id: None,
             process_icon,
         };
@@ -186,6 +203,8 @@ impl Application for ConfirmApp {
                     return Task::none();
                 }
                 self.finished = true;
+                // Record the "remember" opt-in (only meaningful on Allow).
+                store_remember(self.remember_checked && self.args.remember_secs > 0);
                 store_outcome(Outcome::Allow);
                 cosmic::iced::exit()
             }
@@ -199,6 +218,10 @@ impl Application for ConfirmApp {
             }
             Message::ToggleDetails => {
                 self.show_details = !self.show_details;
+                Task::none()
+            }
+            Message::ToggleRemember(v) => {
+                self.remember_checked = v;
                 Task::none()
             }
         }
@@ -325,6 +348,26 @@ impl ConfirmApp {
                 "seconds",
                 remaining as i64,
             )));
+        }
+
+        // "Remember" opt-in checkbox — only when the backend passes a
+        // non-zero window. Label is localized "Remember for <duration>".
+        if self.args.remember_secs > 0 {
+            let secs = self.args.remember_secs;
+            let dur = if secs >= 60 {
+                format!("{} min", secs / 60)
+            } else {
+                format!("{secs} s")
+            };
+            let label = sentinel_shared::ui_i18n::remember_label_template(
+                &sentinel_shared::ui_i18n::ui_lang(),
+            )
+            .replace("%1", &dur);
+            content = content.push(
+                checkbox(self.remember_checked)
+                    .label(label)
+                    .on_toggle(Message::ToggleRemember),
+            );
         }
 
         let mut allow_btn = button::suggested(i18n::t("button-allow"));
