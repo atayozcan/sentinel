@@ -34,6 +34,12 @@ use std::path::{Path, PathBuf};
 
 pub mod audit;
 
+/// CLI surface shared by the helper frontends (COSMIC + Plasma). Gated
+/// behind the `cli` feature so the PAM module and polkit agent — which
+/// never parse these args — don't pull in `clap`.
+#[cfg(feature = "cli")]
+pub mod cli;
+
 /// Compile-time absolute path to the system config file. Set by this
 /// crate's `build.rs` from `$SENTINEL_SYSCONFDIR/security/sentinel.conf`.
 pub const CONFIG_PATH: &str = env!("SENTINEL_CONFIG_PATH");
@@ -45,23 +51,24 @@ pub const CONFIG_PATH: &str = env!("SENTINEL_CONFIG_PATH");
 /// can't drift apart.
 pub const POLKIT_PAM_SERVICE: &str = "polkit-1";
 
-/// Filename of the bypass socket the polkit agent binds and the PAM
-/// module connects to. Lives in the user's `XDG_RUNTIME_DIR` (defaults
-/// to `/run/user/<uid>`). Defined here so both consumers (agent server
-/// + PAM client) agree — diverging path == silently broken bypass.
-pub const BYPASS_SOCKET_BASENAME: &str = "sentinel-agent.sock";
-
-/// Compute the full path to the bypass socket for a given user.
-/// Honors `XDG_RUNTIME_DIR` when set + non-empty, falls back to
-/// `/run/user/<uid>/sentinel-agent.sock`.
-pub fn bypass_socket_path(uid: u32) -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        if !dir.is_empty() {
-            return PathBuf::from(dir).join(BYPASS_SOCKET_BASENAME);
-        }
-    }
-    PathBuf::from(format!("/run/user/{uid}")).join(BYPASS_SOCKET_BASENAME)
-}
+/// The bypass coordination channel is the **system D-Bus**, not a unix
+/// socket. polkit 121+ forks `polkit-agent-helper-1` from polkitd, and on
+/// SELinux systems (openSUSE Tumbleweed) the helper runs as `policykit_t`,
+/// which is denied writing an arbitrary unix socket — but `policykit_t` is
+/// already permitted `dbus send_msg` to user domains (it's how the polkit
+/// agent protocol works, and how `pam_fprintd` authenticates). So the agent
+/// exposes a tiny method here that the PAM module calls. This rides existing
+/// SELinux/AppArmor permissions with no custom policy.
+///
+/// The user's agent claims [`AGENT_BUS_NAME`]; `pam_sentinel` (running as
+/// root inside the helper) first checks the name's owner uid matches the user
+/// being authenticated — defeating a same-name squatter — then calls
+/// `TakeApproval` to consume a one-shot pre-approval.
+pub const AGENT_BUS_NAME: &str = "org.sentinel.Agent";
+/// Object path the bypass interface is published at.
+pub const AGENT_OBJECT_PATH: &str = "/org/sentinel/Agent";
+/// Interface name of the bypass service (same string as the bus name).
+pub const AGENT_INTERFACE: &str = "org.sentinel.Agent";
 
 /// Verdict the helper writes on stdout, parsed back by both the PAM
 /// module's pipe reader and the polkit agent's child-process line
@@ -478,6 +485,20 @@ pub fn process_basename(exe: &str) -> Option<&str> {
     std::path::Path::new(exe)
         .file_name()
         .and_then(|s| s.to_str())
+}
+
+/// Generic shield icon shown when the requesting binary's basename has
+/// no icon-theme match. Present in every standard freedesktop theme
+/// (Breeze, Adwaita, Pop, …). Frontends use this as the fallback name.
+pub const FALLBACK_ICON_NAME: &str = "system-lock-screen";
+
+/// Icon-theme name to display for a requesting executable: the exe's
+/// basename (e.g. `/usr/bin/firefox` → `firefox`). `None` when there's
+/// no exe to derive a name from. Frontends apply their own theme
+/// fallback ([`FALLBACK_ICON_NAME`]) when the name doesn't resolve, so
+/// the COSMIC and Plasma helpers agree on icon selection.
+pub fn resolve_icon_name(process_exe: Option<&str>) -> Option<String> {
+    process_exe.and_then(process_basename).map(str::to_string)
 }
 
 /// systemd-logind session/user metadata, read from the plain

@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use log::{info, warn};
-use sentinel_polkit_agent::{agent, approval_queue, authority, socket_server, subject};
+use sentinel_polkit_agent::{agent, approval_queue, authority, bypass_service, subject};
 use sentinel_shared::audit;
 use zbus::Connection;
 
@@ -83,15 +83,7 @@ fn run_gen(g: &GenSubcommand) -> Result<()> {
 async fn run(args: Args) -> Result<()> {
     let uid = nix::unistd::getuid().as_raw();
     let queue = approval_queue::ApprovalQueue::new();
-
-    // Bring up the bypass socket *before* anything else so a polkit
-    // auth that races us has somewhere to ask.
-    let socket_queue = queue.clone();
-    let socket_task = tokio::spawn(async move {
-        if let Err(e) = socket_server::serve(uid, socket_queue).await {
-            warn!("agent socket server exited: {e:#}");
-        }
-    });
+    let bypass_queue = queue.clone();
 
     let conn = Connection::system().await.context("connect system bus")?;
 
@@ -103,6 +95,23 @@ async fn run(args: Args) -> Result<()> {
         .at(AGENT_OBJECT_PATH, agent)
         .await
         .context("publish AuthenticationAgent object")?;
+
+    // Bypass channel: publish the service + claim the well-known name so
+    // pam_sentinel (root, inside polkit-agent-helper-1) can consume
+    // pre-approvals over the system bus. Up before we register with polkitd
+    // so any auth that races us has somewhere to ask.
+    conn.object_server()
+        .at(
+            sentinel_shared::AGENT_OBJECT_PATH,
+            bypass_service::BypassService {
+                queue: bypass_queue,
+            },
+        )
+        .await
+        .context("publish bypass service")?;
+    conn.request_name(sentinel_shared::AGENT_BUS_NAME)
+        .await
+        .context("claim bypass bus name org.sentinel.Agent")?;
 
     let authority = authority::AuthorityProxy::new(&conn)
         .await
@@ -176,9 +185,6 @@ async fn run(args: Args) -> Result<()> {
     {
         warn!("UnregisterAuthenticationAgent failed: {e}");
     }
-
-    socket_task.abort();
-    socket_server::unlink_socket(uid);
 
     info!("shutdown complete");
     Ok(())
