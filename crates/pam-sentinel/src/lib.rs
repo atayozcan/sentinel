@@ -104,7 +104,7 @@ fn pam_service(pamh: &PamHandle) -> String {
 ///    name and is a useful sanity cross-check.
 /// 3. `"unknown"` literal — last-resort placeholder; shouldn't happen
 ///    in practice.
-fn resolve_user(pamh: &PamHandle, uid: u32) -> String {
+fn resolve_user(pamh: &mut PamHandle, uid: u32) -> String {
     if let Ok(name) = pamh.get_user(None) {
         if !name.is_empty() {
             return name;
