@@ -10,7 +10,10 @@
 # Usage: ./scripts/build-release.sh [version]
 
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# Repo root is two levels up (packaging-kde/scripts/) in the monorepo.
+# cargo build + target/ + the shared Cargo.toml/README/LICENSE/config
+# all live here; KDE-specific files are pulled from packaging-kde/.
+cd "$(dirname "$0")/../.."
 
 VERSION="${1:-$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')}"
 [[ -n "$VERSION" ]] || { echo "could not determine version" >&2; exit 1; }
@@ -58,9 +61,12 @@ mkdir -p "$ROOT/target/release"
 install -Dm755 target/release/libpam_sentinel.so    "$ROOT/target/release/libpam_sentinel.so"
 install -Dm755 target/release/sentinel-polkit-agent "$ROOT/target/release/sentinel-polkit-agent"
 install -Dm755 target/release/sentinel-helper-kde   "$ROOT/target/release/sentinel-helper-kde"
-# Everything install.sh reads at SKIP_BUILD time.
-cp -a install.sh uninstall.sh Cargo.toml README.md LICENSE "$ROOT/"
-cp -a config packaging "$ROOT/"
+# Everything install.sh reads at SKIP_BUILD time. The KDE installer +
+# its packaging dir live under packaging-kde/; the shared workspace
+# manifest/docs and the unified config/ are at the repo root.
+cp -a packaging-kde/install.sh packaging-kde/uninstall.sh Cargo.toml README.md LICENSE "$ROOT/"
+cp -a config "$ROOT/"
+cp -a packaging-kde/packaging "$ROOT/packaging"
 
 tar -C "$STAGE" -czf "$BIN_TAR" "sentinel-kde-$VERSION"
 

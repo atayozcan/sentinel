@@ -117,17 +117,23 @@ jobs:
         # between metadata build and download (a 404). Refresh first and
         # retry the whole install a few times to ride out mirror lag.
         run: |
-          for attempt in 1 2 3; do
-            zypper -n refresh && zypper -n install --no-recommends \
-              git tar gzip gcc gcc-c++ make mold \
-              rust cargo pam-devel \
-              qt6-base-devel qt6-base-private-devel \
-              qt6-declarative-devel qt6-declarative-private-devel \
-              kf6-kirigami-imports kf6-qqc2-desktop-style \
-              layer-shell-qt6-imports kf6-breeze-icons qt6-wayland && break
-            echo "zypper attempt $attempt failed; retrying in 15s…" >&2
-            sleep 15
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if zypper -n refresh && zypper -n install --no-recommends \
+                 git tar gzip gcc gcc-c++ make mold \
+                 rust cargo pam-devel \
+                 qt6-base-devel qt6-base-private-devel \
+                 qt6-declarative-devel qt6-declarative-private-devel \
+                 kf6-kirigami-imports kf6-qqc2-desktop-style \
+                 layer-shell-qt6-imports kf6-breeze-icons qt6-wayland; then
+              ok=1; break
+            fi
+            echo "zypper attempt $attempt failed (Tumbleweed mirror lag); retrying in 30s…" >&2
+            sleep 30
           done
+          # Fail the step loudly if deps never installed, rather than
+          # falling through to a confusing cargo "missing Qt" error.
+          [ "$ok" = 1 ] || { echo "::error::zypper dependency install failed after 5 attempts"; exit 1; }
 
       - uses: actions/checkout@v6
         with:
