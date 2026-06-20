@@ -363,8 +363,11 @@ impl ConfirmApp {
                 &sentinel_shared::ui_i18n::ui_lang(),
             )
             .replace("%1", &dur);
-            content = content
-                .push(checkbox(label, self.remember_checked).on_toggle(Message::ToggleRemember));
+            content = content.push(
+                checkbox(self.remember_checked)
+                    .label(label)
+                    .on_toggle(Message::ToggleRemember),
+            );
         }
 
         let mut allow_btn = button::suggested(i18n::t("button-allow"));
