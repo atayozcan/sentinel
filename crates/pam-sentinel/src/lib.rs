@@ -105,10 +105,13 @@ impl PamHooks for PamSentinel {
             return PamResultCode::PAM_SUCCESS;
         }
 
-        let rc = spawn_dialog(&cfg, &service, &user, &process, process_pid, requesting_uid);
-        // Record the grant only on a genuine dialog Allow (policy/bypass
-        // short-circuits returned earlier, so we don't get here for them).
-        if cfg.remember_seconds > 0 && matches!(rc, PamResultCode::PAM_SUCCESS) {
+        let (rc, remember) =
+            spawn_dialog(&cfg, &service, &user, &process, process_pid, requesting_uid);
+        // Record the grant only when the user ticked the "remember"
+        // checkbox (the helper sets this on an opt-in Allow), not on every
+        // allow. `remember_seconds == 0` hides the checkbox, so this can't
+        // be true then.
+        if remember && cfg.remember_seconds > 0 {
             timestamp::record(&binding);
         }
         rc
@@ -250,7 +253,7 @@ fn spawn_dialog(
     process: &ProcessInfo,
     requesting_pid: i32,
     requesting_uid: u32,
-) -> PamResultCode {
+) -> (PamResultCode, bool) {
     let formatted_title = format_message(&cfg.title, user, service, &process.name);
     let formatted_message = format_message(&cfg.message, user, service, &process.name);
     let formatted_secondary = format_message(&cfg.secondary, user, service, &process.name);
@@ -278,8 +281,8 @@ fn spawn_dialog(
 
     if cfg.log_attempts {
         match &result {
-            Ok(o) => {
-                let event = match o {
+            Ok(v) => {
+                let event = match v.outcome {
                     Outcome::Allow => "auth.allow",
                     Outcome::Deny => "auth.deny",
                     Outcome::Timeout => "auth.timeout",
@@ -306,8 +309,8 @@ fn spawn_dialog(
     }
 
     match result {
-        Ok(o) if o.is_allow() => PamResultCode::PAM_SUCCESS,
-        _ => PamResultCode::PAM_AUTH_ERR,
+        Ok(v) if v.outcome.is_allow() => (PamResultCode::PAM_SUCCESS, v.remember),
+        _ => (PamResultCode::PAM_AUTH_ERR, false),
     }
 }
 

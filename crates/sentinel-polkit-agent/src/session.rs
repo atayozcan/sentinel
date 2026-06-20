@@ -151,7 +151,8 @@ pub async fn run(
         requesting_user: inputs.requesting_user,
     });
     let dialog_started = Instant::now();
-    let outcome = helper_ui::run(req).await.context("run sentinel-helper")?;
+    let verdict = helper_ui::run(req).await.context("run sentinel-helper")?;
+    let outcome = verdict.outcome;
     let latency_ms = dialog_started.elapsed().as_millis();
 
     let process_name = inputs
@@ -216,8 +217,9 @@ pub async fn run(
     }
 
     // Record this Allow so repeat (action, exe) requests within the
-    // window skip the dialog.
-    if inputs.cfg.remember_seconds > 0 {
+    // window skip the dialog — but only if the user ticked the
+    // "remember" checkbox (verdict.remember), not on every allow.
+    if verdict.remember && inputs.cfg.remember_seconds > 0 {
         remember
             .remember(inputs.action_id, inputs.process_exe)
             .await;

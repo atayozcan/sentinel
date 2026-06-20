@@ -125,6 +125,46 @@ impl Outcome {
     }
 }
 
+/// The full verdict line the helper writes: an [`Outcome`] plus whether
+/// the user ticked the "remember" checkbox.
+///
+/// Wire form (single line, whitespace-separated): the outcome token,
+/// optionally followed by `REMEMBER`. e.g. `ALLOW`, `ALLOW REMEMBER`,
+/// `DENY`. Old helpers that only write the bare outcome parse with
+/// `remember = false`, so the format is backward-compatible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Verdict {
+    pub outcome: Outcome,
+    /// User opted into the remember window. Only meaningful with
+    /// `Outcome::Allow`; ignored otherwise.
+    pub remember: bool,
+}
+
+impl Verdict {
+    /// Marker token appended after the outcome when the user opted in.
+    pub const REMEMBER_TOKEN: &str = "REMEMBER";
+}
+
+impl std::fmt::Display for Verdict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.outcome)?;
+        if self.remember && self.outcome.is_allow() {
+            write!(f, " {}", Self::REMEMBER_TOKEN)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::str::FromStr for Verdict {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut tokens = s.split_whitespace();
+        let outcome = tokens.next().unwrap_or_default().parse::<Outcome>()?;
+        let remember = tokens.any(|t| t == Self::REMEMBER_TOKEN);
+        Ok(Self { outcome, remember })
+    }
+}
+
 /// What to do when no Wayland display is reachable from the PAM call site.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -1283,6 +1323,30 @@ mod tests {
         assert!(Outcome::Allow.is_allow());
         assert!(!Outcome::Deny.is_allow());
         assert!(!Outcome::Timeout.is_allow());
+    }
+
+    #[test]
+    fn verdict_wire_round_trips_and_is_backward_compatible() {
+        // bare outcome (old helpers) → remember = false
+        let v: Verdict = "ALLOW".parse().unwrap();
+        assert_eq!(v.outcome, Outcome::Allow);
+        assert!(!v.remember);
+        // opt-in
+        let v: Verdict = "ALLOW REMEMBER".parse().unwrap();
+        assert!(v.remember);
+        assert_eq!(v.to_string(), "ALLOW REMEMBER");
+        // REMEMBER only matters on Allow (Display drops it otherwise)
+        let v = Verdict {
+            outcome: Outcome::Deny,
+            remember: true,
+        };
+        assert_eq!(v.to_string(), "DENY");
+        // round-trip + whitespace tolerance
+        assert_eq!(
+            "  DENY  ".parse::<Verdict>().unwrap().outcome,
+            Outcome::Deny
+        );
+        assert!("NONSENSE".parse::<Verdict>().is_err());
     }
 
     // ---- process_basename -------------------------------------------------

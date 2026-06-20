@@ -8,7 +8,7 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     ForkResult, Pid, User, dup2_stdout, execv, fork, initgroups, pipe, setgid, setuid,
 };
-use sentinel_shared::{Outcome, ServiceConfig};
+use sentinel_shared::{Outcome, ServiceConfig, Verdict};
 use std::ffi::CString;
 use std::os::fd::{AsFd, OwnedFd};
 
@@ -38,7 +38,7 @@ pub struct HelperRequest<'a> {
     pub requesting_pid: i32,
 }
 
-pub fn run(req: &HelperRequest<'_>) -> Result<Outcome, String> {
+pub fn run(req: &HelperRequest<'_>) -> Result<Verdict, String> {
     let (read_fd, write_fd) = pipe().map_err(|e| format!("pipe: {e}"))?;
 
     // SAFETY: fork in a PAM module called from a process not yet using threads
@@ -115,6 +115,8 @@ fn child_exec(req: &HelperRequest<'_>, write_fd: OwnedFd) -> ! {
     push(&mut argv, &req.cfg.timeout.to_string());
     push(&mut argv, "--min-time");
     push(&mut argv, &req.cfg.min_display_time_ms.to_string());
+    push(&mut argv, "--remember-secs");
+    push(&mut argv, &req.cfg.remember_seconds.to_string());
     if !req.sound_name.is_empty() {
         push(&mut argv, "--sound-name");
         push(&mut argv, req.sound_name);
@@ -170,7 +172,7 @@ fn parent_poll_timeout(timeout_secs: u32) -> PollTimeout {
     PollTimeout::try_from(timeout_ms).unwrap_or(PollTimeout::MAX)
 }
 
-fn parent_wait(child: Pid, read_fd: OwnedFd, req: &HelperRequest<'_>) -> Result<Outcome, String> {
+fn parent_wait(child: Pid, read_fd: OwnedFd, req: &HelperRequest<'_>) -> Result<Verdict, String> {
     let mut fds = [PollFd::new(read_fd.as_fd(), PollFlags::POLLIN)];
 
     let timeout = parent_poll_timeout(req.cfg.timeout);
@@ -212,10 +214,13 @@ fn parent_wait(child: Pid, read_fd: OwnedFd, req: &HelperRequest<'_>) -> Result<
         .next()
         .unwrap_or("");
 
-    // Parse the wire verdict via the shared `Outcome` enum. Anything
-    // unrecognized maps to `Deny` — the PAM caller treats anything
-    // other than Allow as `PAM_AUTH_ERR`.
-    Ok(s.parse::<Outcome>().unwrap_or(Outcome::Deny))
+    // Parse the wire verdict (outcome + remember opt-in). Anything
+    // unrecognized maps to a bare `Deny` — the PAM caller treats
+    // anything other than Allow as `PAM_AUTH_ERR`.
+    Ok(s.parse::<Verdict>().unwrap_or(Verdict {
+        outcome: Outcome::Deny,
+        remember: false,
+    }))
 }
 
 #[cfg(test)]

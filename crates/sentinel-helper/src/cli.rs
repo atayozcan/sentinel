@@ -92,6 +92,13 @@ pub struct Args {
     /// played and we don't error out.
     #[arg(long, default_value_t = String::new())]
     pub sound_name: String,
+
+    /// Offer a "remember for this many seconds" opt-in checkbox. `0`
+    /// (default) hides it. The backend passes `[general].remember_seconds`;
+    /// when ticked and allowed, the helper appends `REMEMBER` to its
+    /// verdict so the backend records the grant.
+    #[arg(long, default_value_t = 0)]
+    pub remember_secs: u32,
 }
 
 impl Args {

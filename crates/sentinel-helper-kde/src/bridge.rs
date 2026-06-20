@@ -46,6 +46,10 @@ pub mod qobject {
         // Live UI state.
         #[qproperty(bool, allow_enabled, cxx_name = "allowEnabled")]
         #[qproperty(bool, show_details, cxx_name = "showDetails")]
+        // "Remember" opt-in checkbox (shown when remember_secs > 0).
+        #[qproperty(bool, remember_offered, cxx_name = "rememberOffered")]
+        #[qproperty(QString, remember_label, cxx_name = "rememberLabel")]
+        #[qproperty(bool, remember_checked, cxx_name = "rememberChecked")]
         type DialogController = super::DialogControllerRust;
 
         /// 100 ms clock tick from the QML `Timer`: advances elapsed time,
@@ -78,7 +82,7 @@ pub mod qobject {
 
 use core::pin::Pin;
 use cxx_qt_lib::QString;
-use sentinel_shared::Outcome;
+use sentinel_shared::{Outcome, Verdict};
 
 /// QML `Timer` interval, milliseconds. Counting ticks (rather than
 /// reading a wall clock) keeps `tick` to plain property getters/setters.
@@ -107,6 +111,9 @@ pub struct DialogControllerRust {
     progress_fraction: f64,
     allow_enabled: bool,
     show_details: bool,
+    remember_offered: bool,
+    remember_label: QString,
+    remember_checked: bool,
 }
 
 impl Default for DialogControllerRust {
@@ -132,6 +139,22 @@ impl Default for DialogControllerRust {
 
         let timeout_secs = i32::try_from(a.timeout).unwrap_or(i32::MAX);
         let min_time_ms = i32::try_from(a.min_time).unwrap_or(i32::MAX);
+
+        // "Remember" opt-in checkbox: offered only when the backend passes
+        // a non-zero window. Label is localized "Remember for <duration>".
+        let remember_offered = a.remember_secs > 0;
+        let remember_label = if remember_offered {
+            let secs = a.remember_secs;
+            let dur = if secs >= 60 {
+                format!("{} min", secs / 60)
+            } else {
+                format!("{secs} s")
+            };
+            let tmpl = sentinel_shared::ui_i18n::remember_label_template(ui_lang());
+            QString::from(tmpl.replace("%1", &dur).as_str())
+        } else {
+            QString::default()
+        };
 
         // Clamp every helper-supplied string. The process exe/cmdline/cwd
         // come from /proc of the requesting process and are attacker-
@@ -161,6 +184,9 @@ impl Default for DialogControllerRust {
             // min_time == 0 → Allow usable immediately.
             allow_enabled: a.min_time == 0,
             show_details: false,
+            remember_offered,
+            remember_label,
+            remember_checked: false,
         }
     }
 }
@@ -189,21 +215,26 @@ impl qobject::DialogController {
             self.as_mut().set_remaining_secs(remaining);
 
             if elapsed >= total {
-                finish(Outcome::Timeout);
+                finish_outcome(Outcome::Timeout);
             }
         }
     }
 
-    /// User pressed Allow.
+    /// User pressed Allow. If the "remember" checkbox was offered and
+    /// ticked, the verdict carries the opt-in so the backend records it.
     pub fn allow(self: Pin<&mut Self>) {
         if *self.allow_enabled() {
-            finish(Outcome::Allow);
+            let remember = *self.remember_offered() && *self.remember_checked();
+            finish(Verdict {
+                outcome: Outcome::Allow,
+                remember,
+            });
         }
     }
 
     /// User pressed Deny or Escape.
     pub fn deny(self: Pin<&mut Self>) {
-        finish(Outcome::Deny);
+        finish_outcome(Outcome::Deny);
     }
 
     /// Toggle the expandable details panel.
@@ -234,18 +265,26 @@ fn ui_lang() -> &'static str {
 /// the matching code. We flush explicitly because `process::exit` does
 /// not flush Rust's (block-buffered when piped) stdout, and the parent
 /// reads exactly this one line.
-fn finish(outcome: Outcome) -> ! {
+fn finish(verdict: Verdict) -> ! {
     use std::io::Write;
     let mut out = std::io::stdout();
-    let _ = writeln!(out, "{outcome}");
+    let _ = writeln!(out, "{verdict}");
     let _ = out.flush();
-    std::process::exit(outcome.exit_code());
+    std::process::exit(verdict.outcome.exit_code());
+}
+
+/// Write a bare outcome (no "remember" opt-in) — used by Deny / Timeout.
+fn finish_outcome(outcome: Outcome) -> ! {
+    finish(Verdict {
+        outcome,
+        remember: false,
+    })
 }
 
 /// Fail-safe used by `main` if the event loop ever returns without a
 /// verdict (e.g. the surface was closed by the compositor).
 pub fn finish_deny() -> ! {
-    finish(Outcome::Deny)
+    finish_outcome(Outcome::Deny)
 }
 
 /// Clamp untrusted text to `max` characters. The requesting process's

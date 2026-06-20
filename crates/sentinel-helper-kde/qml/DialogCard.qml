@@ -200,6 +200,18 @@ Item {
                 opacity: 0.7
             }
 
+            // "Remember" opt-in checkbox — only shown when the backend
+            // passes a non-zero remember window. Ticking it makes the
+            // verdict carry the opt-in so repeats skip the dialog.
+            QQC2.CheckBox {
+                visible: ctrl.rememberOffered
+                text: ctrl.rememberLabel
+                checked: ctrl.rememberChecked
+                onToggled: ctrl.rememberChecked = checked
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+
             // Allow / Deny. Declared Allow-first; when allowFirst is false
             // (randomized) RightToLeft flips them so Deny is on the left.
             RowLayout {

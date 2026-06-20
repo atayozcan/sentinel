@@ -129,6 +129,39 @@ async fn serialised_session_paths() {
         );
     }
 
+    // ---- Remember opt-in: plain ALLOW does NOT record; ALLOW REMEMBER does ----
+    {
+        let mut rcfg = cfg.clone();
+        rcfg.remember_seconds = 60;
+        let remember = RememberCache::new();
+        unsafe {
+            std::env::set_var("SENTINEL_TEST_HELPER_OUTCOME", "ALLOW");
+            std::env::set_var("SENTINEL_TEST_HELPER1_OUTCOME", "SUCCESS");
+        }
+        let _ = session::run(
+            ApprovalQueue::new(),
+            remember.clone(),
+            inputs("a.rem", "ck-r1", &rcfg),
+        )
+        .await;
+        assert!(
+            !remember.is_fresh("a.rem", Some("/usr/bin/true"), 60).await,
+            "plain ALLOW must NOT remember"
+        );
+
+        unsafe { std::env::set_var("SENTINEL_TEST_HELPER_OUTCOME", "ALLOW REMEMBER") };
+        let _ = session::run(
+            ApprovalQueue::new(),
+            remember.clone(),
+            inputs("a.rem", "ck-r2", &rcfg),
+        )
+        .await;
+        assert!(
+            remember.is_fresh("a.rem", Some("/usr/bin/true"), 60).await,
+            "ALLOW REMEMBER must record the grant"
+        );
+    }
+
     // Cleanup process env so concurrent tests don't see stale values.
     unsafe {
         std::env::remove_var("SENTINEL_TEST_HELPER_OUTCOME");

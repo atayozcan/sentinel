@@ -6,7 +6,7 @@
 //! Unlike `pam-sentinel`'s helper.rs, the agent already runs as the
 //! requesting user — no fork/setuid dance needed. Just `tokio::process`.
 
-use sentinel_shared::{Outcome, POLKIT_PAM_SERVICE, ServiceConfig, format_message};
+use sentinel_shared::{POLKIT_PAM_SERVICE, ServiceConfig, Verdict, format_message};
 use std::process::Stdio;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -32,6 +32,7 @@ pub struct Request {
     pub min_time: u64,
     pub randomize: bool,
     pub sound_name: String,
+    pub remember_secs: u32,
     pub process_exe: Option<String>,
     pub process_cmdline: Option<String>,
     pub process_pid: Option<i32>,
@@ -107,6 +108,7 @@ impl Request {
             min_time: args.cfg.min_display_time_ms as u64,
             randomize: args.cfg.randomize_buttons,
             sound_name: args.cfg.sound_name.clone(),
+            remember_secs: args.cfg.remember_seconds,
             process_exe: args.process_exe.map(str::to_string),
             process_cmdline: args.process_cmdline.map(str::to_string),
             process_pid: args.process_pid,
@@ -125,11 +127,11 @@ impl Request {
 /// agent's state machine without a real Wayland session. Off by
 /// default in production (env var not set); harmless if a user sets
 /// it locally — the helper is replaced by a deterministic verdict.
-pub async fn run(req: Request) -> Result<Outcome, HelperError> {
+pub async fn run(req: Request) -> Result<Verdict, HelperError> {
     if let Ok(canned) = std::env::var("SENTINEL_TEST_HELPER_OUTCOME") {
-        if let Ok(o) = canned.parse::<Outcome>() {
+        if let Ok(v) = canned.parse::<Verdict>() {
             log::debug!("helper_ui::run: short-circuit via SENTINEL_TEST_HELPER_OUTCOME={canned}");
-            return Ok(o);
+            return Ok(v);
         }
     }
     let mut cmd = Command::new(HELPER_PATH);
@@ -142,7 +144,9 @@ pub async fn run(req: Request) -> Result<Outcome, HelperError> {
         .arg("--timeout")
         .arg(req.timeout.to_string())
         .arg("--min-time")
-        .arg(req.min_time.to_string());
+        .arg(req.min_time.to_string())
+        .arg("--remember-secs")
+        .arg(req.remember_secs.to_string());
     if !req.sound_name.is_empty() {
         cmd.arg("--sound-name").arg(&req.sound_name);
     }
@@ -175,10 +179,10 @@ pub async fn run(req: Request) -> Result<Outcome, HelperError> {
     let stdout = child.stdout.take().expect("piped stdout");
     let mut lines = BufReader::new(stdout).lines();
 
-    let mut verdict: Option<Outcome> = None;
+    let mut verdict: Option<Verdict> = None;
     while let Some(line) = lines.next_line().await? {
-        if let Ok(o) = line.parse::<Outcome>() {
-            verdict = Some(o);
+        if let Ok(v) = line.parse::<Verdict>() {
+            verdict = Some(v);
             break;
         }
     }

@@ -60,6 +60,26 @@ pub fn translate(key: &str, lang: &str) -> &'static str {
     localized.or_else(|| en(key)).unwrap_or("?")
 }
 
+/// Localized template for the "remember" opt-in checkbox. `%1` is the
+/// Qt placeholder the helper replaces with a human duration (e.g.
+/// `5 min`). Falls back to English for an unlisted locale.
+pub fn remember_label_template(lang: &str) -> &'static str {
+    match lang {
+        "de" => "Für %1 merken",
+        "es" => "Recordar durante %1",
+        "fr" => "Mémoriser pendant %1",
+        "it" => "Ricorda per %1",
+        "ja" => "%1 記憶する",
+        "nl" => "Onthouden voor %1",
+        "pl" => "Zapamiętaj na %1",
+        "pt" => "Lembrar por %1",
+        "ru" => "Запомнить на %1",
+        "tr" => "%1 boyunca hatırla",
+        "zh" => "在 %1 内记住",
+        _ => "Remember for %1",
+    }
+}
+
 fn en(key: &str) -> Option<&'static str> {
     Some(match key {
         "allow" => "Allow",
@@ -324,7 +344,10 @@ mod tests {
             // count placeholder must survive in every locale's auto-deny-in
             if key == "auto-deny-in" {
                 for (name, f) in locales {
-                    assert!(f(key).unwrap().contains("%1"), "{name} auto-deny-in lost %1");
+                    assert!(
+                        f(key).unwrap().contains("%1"),
+                        "{name} auto-deny-in lost %1"
+                    );
                 }
             }
         }

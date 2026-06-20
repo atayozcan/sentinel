@@ -19,10 +19,11 @@ own `timeout` to zero.
 | `show_process_info` | bool | `true` | Display the requesting process's exe/cmdline in the dialog. |
 | `log_attempts` | bool | `true` | Log every allow/deny/timeout to syslog (`auth.info`). |
 | `min_display_time_ms` | uint | `500` | Disable the Allow button for this many ms after the dialog appears, blocking instant scripted clicks. |
-| `remember_seconds` | uint | `0` | "Remember" window. After an Allow, repeat requests from the **same login session** for the **same service + binary** auto-allow without a dialog for this many seconds. `0` (default) disables it; hard-capped at `900`. See [`[general].remember_seconds`](#remember-window) below. |
+| `remember_seconds` | uint | `0` | "Remember" window. When non-zero, the dialog shows a **"Remember for N min" checkbox**; tick it and Allow to let repeat requests from the **same login session** for the **same service + binary** skip the dialog for this many seconds. `0` (default) hides the checkbox; hard-capped at `900`. See [below](#remember-window). |
 
 <a id="remember-window"></a>
-**The remember window** is a `sudo`-timestamp analogue. A grant is bound
+**The remember window** is a `sudo`-timestamp analogue, opt-in **per
+request** via a dialog checkbox (not a silent global). A grant is bound
 to your `loginuid` **and** kernel audit `sessionid`, so it can't be
 replayed in another session or by another user, and is scoped to the
 exact `(service, exe)` it was granted for — never a blanket allow. It is
