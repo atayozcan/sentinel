@@ -40,7 +40,7 @@ jobs:
           - arch: aarch64
             runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -135,7 +135,7 @@ jobs:
           # falling through to a confusing cargo "missing Qt" error.
           [ "$ok" = 1 ] || { echo "::error::zypper dependency install failed after 5 attempts"; exit 1; }
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -170,7 +170,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Verify release-notes file exists
         run: |
@@ -217,7 +217,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Stage PKGBUILD + install hook
         run: |
           mkdir -p aur-stage
@@ -242,7 +242,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Stage PKGBUILD + install hook
         run: |
           mkdir -p aur-stage

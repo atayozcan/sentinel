@@ -43,7 +43,7 @@ jobs:
     name: fmt + clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install build deps
         run: |
@@ -82,7 +82,7 @@ jobs:
     name: cargo test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install build deps
         run: |
@@ -118,7 +118,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install build deps
         run: |
@@ -151,7 +151,7 @@ jobs:
     name: cargo audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install mold
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mold
@@ -193,7 +193,7 @@ jobs:
     name: cargo deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install mold
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mold
@@ -221,7 +221,7 @@ jobs:
     name: agent integration
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install build deps
         run: |
@@ -249,7 +249,7 @@ jobs:
     name: REUSE lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: REUSE compliance check
         uses: fsfe/reuse-action@v6
@@ -263,7 +263,7 @@ jobs:
     name: cargo deb + generate-rpm (smoke)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install build deps
         run: |
@@ -330,7 +330,7 @@ jobs:
           kf6-kirigami-imports kf6-qqc2-desktop-style
           layer-shell-qt6-imports kf6-breeze-icons qt6-wayland
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Mark workspace safe for git
         # The container mounts the workspace with a different owner; git
