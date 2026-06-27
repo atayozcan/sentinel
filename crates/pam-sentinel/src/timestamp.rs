@@ -16,8 +16,10 @@
 //! - the kernel audit `sessionid`,
 //!
 //! so a grant cannot be replayed in another login session or by another
-//! user; and it is **scoped** to the `(service, exe)` it was granted for,
-//! so it is never a blanket allow. A process with no audit session
+//! user; and it is **scoped** to the `(service, command)` it was granted
+//! for — the *full* elevated command, not just the program name, so a
+//! grant for `sudo pacman -Syu` can never auto-allow
+//! `sudo pacman -U /tmp/evil`. A process with no audit session
 //! (`loginuid`/`sessionid == (u32)-1`) is treated as un-rememberable.
 //!
 //! Freshness uses `CLOCK_BOOTTIME` (monotonic since boot) stored *in* the
@@ -46,20 +48,27 @@ pub struct Binding<'a> {
     pub loginuid: u32,
     pub sessionid: u32,
     pub service: &'a str,
-    pub exe: &'a str,
+    /// The **full** command this grant authorizes (e.g. `pacman -Syu`),
+    /// not just the program name. Comes from
+    /// [`crate::proc_info::ProcessInfo::remember_command`], which is
+    /// `None` for un-rememberable requests (bare-elevation root shells,
+    /// arbitrary-code gateways) — so a present, non-empty `command` is
+    /// itself an eligibility signal. Binding to the whole command is what
+    /// stops a grant for one invocation authorizing a different one.
+    pub command: &'a str,
 }
 
 impl Binding<'_> {
     /// A record can only be created/trusted when the request is tied to a
-    /// real login session and a concrete binary.
+    /// real login session and a concrete command.
     fn is_bindable(&self) -> bool {
-        self.loginuid != u32::MAX && self.sessionid != u32::MAX && !self.exe.is_empty()
+        self.loginuid != u32::MAX && self.sessionid != u32::MAX && !self.command.is_empty()
     }
 
     fn key(&self) -> String {
         format!(
             "{}:{}:{}:{}",
-            self.loginuid, self.sessionid, self.service, self.exe
+            self.loginuid, self.sessionid, self.service, self.command
         )
     }
 }
@@ -200,12 +209,12 @@ fn ensure_dir(dir: &Path, strict: bool) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    fn b<'a>(service: &'a str, exe: &'a str) -> Binding<'a> {
+    fn b<'a>(service: &'a str, command: &'a str) -> Binding<'a> {
         Binding {
             loginuid: 1000,
             sessionid: 3,
             service,
-            exe,
+            command,
         }
     }
 
@@ -229,21 +238,25 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("sentinel-ts-test2-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let sub = dir.join("ts");
-        record_in(&sub, &b("sudo", "/usr/bin/pacman"), false);
+        record_in(&sub, &b("sudo", "pacman -Syu"), false);
 
-        // different service / exe / session / user must NOT match
-        assert!(is_fresh_in(&sub, &b("sudo", "/usr/bin/pacman"), 60, false));
-        assert!(!is_fresh_in(&sub, &b("su", "/usr/bin/pacman"), 60, false));
+        // different service / command / session / user must NOT match
+        assert!(is_fresh_in(&sub, &b("sudo", "pacman -Syu"), 60, false));
+        assert!(!is_fresh_in(&sub, &b("su", "pacman -Syu"), 60, false));
+        // SAME program, DIFFERENT arguments must NOT match — this is the
+        // argv-binding guarantee (a grant for `pacman -Syu` cannot
+        // authorize `pacman -U /tmp/evil`).
         assert!(!is_fresh_in(
             &sub,
-            &b("sudo", "/usr/bin/topgrade"),
+            &b("sudo", "pacman -U /tmp/evil"),
             60,
             false
         ));
-        let mut other_session = b("sudo", "/usr/bin/pacman");
+        assert!(!is_fresh_in(&sub, &b("sudo", "topgrade"), 60, false));
+        let mut other_session = b("sudo", "pacman -Syu");
         other_session.sessionid = 99;
         assert!(!is_fresh_in(&sub, &other_session, 60, false));
-        let mut other_user = b("sudo", "/usr/bin/pacman");
+        let mut other_user = b("sudo", "pacman -Syu");
         other_user.loginuid = 1001;
         assert!(!is_fresh_in(&sub, &other_user, 60, false));
         let _ = fs::remove_dir_all(&dir);
@@ -257,7 +270,7 @@ mod tests {
             loginuid: u32::MAX,
             sessionid: u32::MAX,
             service: "sudo",
-            exe: "/usr/bin/pacman",
+            command: "pacman -Syu",
         };
         record_in(&sub, &no_session, false); // no-op
         assert!(!is_fresh_in(&sub, &no_session, 60, false));

@@ -162,6 +162,26 @@ async fn serialised_session_paths() {
         );
     }
 
+    // ---- pkexec carve-out: the generic exec action is never remembered ----
+    {
+        let mut rcfg = cfg.clone();
+        rcfg.remember_seconds = 60;
+        let remember = RememberCache::new();
+        unsafe { std::env::set_var("SENTINEL_TEST_HELPER_OUTCOME", "ALLOW REMEMBER") };
+        let _ = session::run(
+            ApprovalQueue::new(),
+            remember.clone(),
+            inputs("org.freedesktop.policykit.exec", "ck-px", &rcfg),
+        )
+        .await;
+        assert!(
+            !remember
+                .is_fresh("org.freedesktop.policykit.exec", Some("/usr/bin/true"), 60)
+                .await,
+            "generic pkexec action must NOT be remembered even on ALLOW REMEMBER"
+        );
+    }
+
     // Cleanup process env so concurrent tests don't see stale values.
     unsafe {
         std::env::remove_var("SENTINEL_TEST_HELPER_OUTCOME");

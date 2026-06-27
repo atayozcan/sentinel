@@ -15,6 +15,19 @@
 //!   `headless_action` says (default `PAM_IGNORE` so the next module
 //!   can prompt for a password).
 //! * **disabled**: `enabled = false` in config; `PAM_IGNORE`.
+//!
+//! # `unsafe` policy
+//!
+//! This crate runs as **root** inside the privileged binary, so its
+//! `unsafe` surface is its blast radius. The crate `#![deny(unsafe_code)]`
+//! makes any new `unsafe` a compile error; the handful of genuinely
+//! unsafe operations that remain — `fork(2)` and post-`fork`/pre-`exec`
+//! `std::env::set_var` (both unavoidably `unsafe`) — opt back in with a
+//! narrowly-scoped `#[allow(unsafe_code)]` and a `SAFETY:` note. Audit
+//! them with `grep -rn 'allow(unsafe_code)' crates/pam-sentinel`. (We use
+//! `deny`, not `forbid`, precisely so those audited sites can opt in.)
+
+#![deny(unsafe_code)]
 
 mod agent_bypass;
 mod display;
@@ -65,8 +78,8 @@ impl PamHooks for PamSentinel {
         // For loginuid lookup we still walk via the parent because the
         // loginuid is inherited from login, not set on the privileged
         // binary itself.
-        let process_pid = unsafe { libc_getpid() };
-        let requesting_uid = caller_uid(unsafe { libc_getppid() });
+        let process_pid = getpid();
+        let requesting_uid = caller_uid(getppid());
         let user = resolve_user(pamh, requesting_uid);
 
         if !display::detect_for_user(requesting_uid) {
@@ -81,38 +94,53 @@ impl PamHooks for PamSentinel {
         }
 
         // "Remember" window (root-owned timestamp store): a fresh grant
-        // for this (loginuid, session, service, exe) short-circuits to
-        // allow without a dialog. Bound to the login session so it can't
-        // be replayed elsewhere; see the `timestamp` module.
-        let ppid = unsafe { libc_getppid() };
-        let binding = timestamp::Binding {
-            loginuid: read_proc_u32(ppid, "loginuid"),
-            sessionid: read_proc_u32(ppid, "sessionid"),
-            service: &service,
-            exe: &process.exe,
-        };
-        if cfg.remember_seconds > 0 && timestamp::is_fresh(&binding, cfg.remember_seconds as u64) {
-            if cfg.log_attempts {
-                log::info!(
-                    "event=auth.allow source=remember user={} service={} process={} exe={} uid={}",
-                    q(&user),
-                    q(&service),
-                    q(&process.name),
-                    q(&process.exe),
-                    requesting_uid
-                );
+        // for this (loginuid, session, service, FULL command) short-
+        // circuits to allow without a dialog. The grant binds to the
+        // whole elevated command — not just the program — and excludes
+        // bare-elevation root shells and arbitrary-code gateways, so a
+        // grant for `sudo pacman -Syu` can't auto-allow
+        // `sudo pacman -U /tmp/evil` (see `ProcessInfo::remember_command`).
+        // `None` means this request is not rememberable: skip the store
+        // entirely (always dialog, never record). Bound to the login
+        // session so it can't be replayed elsewhere; see `timestamp`.
+        let ppid = getppid();
+        let binding = process
+            .remember_command
+            .as_deref()
+            .map(|command| timestamp::Binding {
+                loginuid: read_proc_u32(ppid, "loginuid"),
+                sessionid: read_proc_u32(ppid, "sessionid"),
+                service: &service,
+                command,
+            });
+        if cfg.remember_seconds > 0 {
+            if let Some(b) = &binding {
+                if timestamp::is_fresh(b, cfg.remember_seconds as u64) {
+                    if cfg.log_attempts {
+                        log::info!(
+                            "event=auth.allow source=remember user={} service={} process={} exe={} uid={}",
+                            q(&user),
+                            q(&service),
+                            q(&process.name),
+                            q(&process.exe),
+                            requesting_uid
+                        );
+                    }
+                    return PamResultCode::PAM_SUCCESS;
+                }
             }
-            return PamResultCode::PAM_SUCCESS;
         }
 
         let (rc, remember) =
             spawn_dialog(&cfg, &service, &user, &process, process_pid, requesting_uid);
         // Record the grant only when the user ticked the "remember"
         // checkbox (the helper sets this on an opt-in Allow), not on every
-        // allow. `remember_seconds == 0` hides the checkbox, so this can't
-        // be true then.
+        // allow. `remember_seconds == 0` hides the checkbox, and a
+        // non-rememberable request has no binding, so neither can record.
         if remember && cfg.remember_seconds > 0 {
-            timestamp::record(&binding);
+            if let Some(b) = &binding {
+                timestamp::record(b);
+            }
         }
         rc
     }
@@ -164,7 +192,7 @@ fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultC
     // The user's actual process (their shell, typically) is the
     // parent of the privileged binary that dlopened us. That's the
     // env we want for session enrichment.
-    let session = logfmt_session_for_pid(unsafe { libc_getppid() });
+    let session = logfmt_session_for_pid(getppid());
 
     // Emit a `auth.headless` discriminator before the action-specific
     // line so journalctl filters distinguish "we tried to dialog the
@@ -213,8 +241,12 @@ fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultC
 }
 
 /// Static `[policy]` allow/deny, evaluated *before* spawning the dialog.
-/// Matches on the requesting binary's resolved exe path
-/// (`/proc/<pid>/exe`) — never the spoofable `argv[0]`. Returns
+/// Matches on `process.exe`: for a normal process that is the resolved
+/// `/proc/<pid>/exe`; for an elevation wrapper (`sudo CMD …`) it is the
+/// *elevated program* parsed from the wrapper's cmdline (e.g. `pacman`,
+/// not `/usr/bin/sudo`). Either way it is never the spoofable `argv[0]`.
+/// (So a `[policy]` entry for an elevated target should be the program
+/// **basename**, e.g. `pacman`, not an absolute path.) Returns
 /// `Some(rc)` to short-circuit, `None` to fall through to the dialog.
 ///
 /// An `allow` match is passwordless elevation (admin opt-in, like a
@@ -232,7 +264,7 @@ fn check_policy(
         PolicyDecision::Ask => return None,
     };
     if cfg.log_attempts {
-        let session = logfmt_session_for_pid(unsafe { libc_getppid() });
+        let session = logfmt_session_for_pid(getppid());
         log::info!(
             "event={event} source=policy user={} service={} process={} exe={} uid={}{}",
             q(user),
@@ -277,7 +309,7 @@ fn spawn_dialog(
     // Session enrichment via the user's process env (getppid() of
     // the privileged binary we're loaded into). Empty string on
     // any failure — see logfmt_session_for_pid.
-    let session = logfmt_session_for_pid(unsafe { libc_getppid() });
+    let session = logfmt_session_for_pid(getppid());
 
     if cfg.log_attempts {
         match &result {
@@ -329,27 +361,21 @@ fn init_logger(debug: bool) {
     });
 }
 
-// -------------- libc shims + caller-uid lookup ----------------------------
+// -------------- pid/uid lookup + caller-uid lookup ------------------------
 
-unsafe extern "C" {
-    #[link_name = "getuid"]
-    fn libc_getuid_raw() -> u32;
-    #[link_name = "getppid"]
-    fn libc_getppid_raw() -> i32;
-    #[link_name = "getpid"]
-    fn libc_getpid_raw() -> i32;
+// `getpid`/`getppid`/`getuid` via `nix` — always-safe syscall wrappers,
+// so no `unsafe` (and no hand-rolled `extern "C"`) is needed. Thin
+// adapters to the `i32`/`u32` the call sites want.
+fn getpid() -> i32 {
+    nix::unistd::getpid().as_raw()
 }
 
-pub(crate) unsafe fn libc_getuid() -> u32 {
-    unsafe { libc_getuid_raw() }
+fn getppid() -> i32 {
+    nix::unistd::getppid().as_raw()
 }
 
-pub(crate) unsafe fn libc_getppid() -> i32 {
-    unsafe { libc_getppid_raw() }
-}
-
-pub(crate) unsafe fn libc_getpid() -> i32 {
-    unsafe { libc_getpid_raw() }
+fn getuid() -> u32 {
+    nix::unistd::getuid().as_raw()
 }
 
 /// Identify the calling (human) user, even when the immediate PAM
@@ -382,7 +408,7 @@ pub(crate) fn caller_uid(ppid: i32) -> u32 {
             }
         }
     }
-    unsafe { libc_getuid() }
+    getuid()
 }
 
 /// Read a single-`u32` `/proc/<ppid>/<field>` such as `loginuid` or

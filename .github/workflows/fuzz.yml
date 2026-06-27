@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: 2026 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: fuzz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly deeper run (Mondays 04:00 UTC).
+    - cron: '0 4 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [verdict_parse, strip_elevation, format_message]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly + cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
+      - name: Fuzz ${{ matrix.target }}
+        # 60 s per target on push/PR; 5 min on the weekly schedule.
+        run: >
+          cargo +nightly fuzz run ${{ matrix.target }} --
+          -max_total_time=${{ github.event_name == 'schedule' && '300' || '60' }}
+          -print_final_stats=1
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

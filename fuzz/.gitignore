@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Atay Özcan <atay@oezcan.me>
+# SPDX-License-Identifier: GPL-3.0-or-later
+target/
+corpus/
+artifacts/
+coverage/
+Cargo.lock

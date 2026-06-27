@@ -107,3 +107,13 @@ There's no configuration where Sentinel returning anything makes
 auth *easier* than the underlying password stack. Worst case it's
 neutral (you still type your password); best case (Allow) it's a
 single click instead of a password.
+
+**Caveat — the remember window.** When the optional remember window is
+enabled for a service (`[services.<name>].remember_seconds`), a *fresh*
+matching grant auto-allows with **no dialog** — and under `sufficient`,
+**no password** — for the window's duration, relaxing the per-request
+click above. Terminal services (`sudo`/`su`) are **off by default**, so
+the shipped wiring keeps the "adds a click, never weakens" invariant
+unless you opt a service in. The polkit/GUI remember default (on) is a
+per-session, in-memory cache and does not touch this terminal stack.
+See [Configuration → remember window](./configuration.md#remember-window).

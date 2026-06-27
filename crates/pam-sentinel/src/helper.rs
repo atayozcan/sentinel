@@ -38,6 +38,9 @@ pub struct HelperRequest<'a> {
     pub requesting_pid: i32,
 }
 
+// `fork(2)` is unavoidably `unsafe`; contained here (crate is
+// `#![deny(unsafe_code)]`). See the SAFETY note at the call.
+#[allow(unsafe_code)]
 pub fn run(req: &HelperRequest<'_>) -> Result<Verdict, String> {
     let (read_fd, write_fd) = pipe().map_err(|e| format!("pipe: {e}"))?;
 
@@ -55,6 +58,9 @@ pub fn run(req: &HelperRequest<'_>) -> Result<Verdict, String> {
     }
 }
 
+// Post-`fork` child: `std::env::set_var` is `unsafe` (edition 2024);
+// safe here because the child is single-threaded before `exec`.
+#[allow(unsafe_code)]
 fn child_exec(req: &HelperRequest<'_>, write_fd: OwnedFd) -> ! {
     let user = match User::from_uid(nix::unistd::Uid::from_raw(req.target_uid)) {
         Ok(Some(u)) => u,
