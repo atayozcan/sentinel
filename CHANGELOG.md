@@ -8,6 +8,16 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- **Fuzz harnesses for the parsing surfaces.** Added `cargo-fuzz`
+  (libFuzzer) targets under `fuzz/` for the inputs that cross into the
+  auth path: `Verdict::from_str` (helper→backend wire verdict),
+  `strip_elevation_prefix` (untrusted `/proc/<pid>/cmdline`), and
+  `format_message` (`%`-token substitution). A `fuzz` CI workflow
+  smoke-fuzzes each target 60 s per push (5 min weekly). No crashes found
+  in initial runs (~2.2M/660K/980K execs).
+
 ## [0.11.1] — 2026-06-20
 
 Packaging hotfix for 0.11.0 — no runtime, config, or auth-path change.
