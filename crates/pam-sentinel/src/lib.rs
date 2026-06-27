@@ -15,6 +15,19 @@
 //!   `headless_action` says (default `PAM_IGNORE` so the next module
 //!   can prompt for a password).
 //! * **disabled**: `enabled = false` in config; `PAM_IGNORE`.
+//!
+//! # `unsafe` policy
+//!
+//! This crate runs as **root** inside the privileged binary, so its
+//! `unsafe` surface is its blast radius. The crate `#![deny(unsafe_code)]`
+//! makes any new `unsafe` a compile error; the handful of genuinely
+//! unsafe operations that remain — `fork(2)` and post-`fork`/pre-`exec`
+//! `std::env::set_var` (both unavoidably `unsafe`) — opt back in with a
+//! narrowly-scoped `#[allow(unsafe_code)]` and a `SAFETY:` note. Audit
+//! them with `grep -rn 'allow(unsafe_code)' crates/pam-sentinel`. (We use
+//! `deny`, not `forbid`, precisely so those audited sites can opt in.)
+
+#![deny(unsafe_code)]
 
 mod agent_bypass;
 mod display;
@@ -65,8 +78,8 @@ impl PamHooks for PamSentinel {
         // For loginuid lookup we still walk via the parent because the
         // loginuid is inherited from login, not set on the privileged
         // binary itself.
-        let process_pid = unsafe { libc_getpid() };
-        let requesting_uid = caller_uid(unsafe { libc_getppid() });
+        let process_pid = getpid();
+        let requesting_uid = caller_uid(getppid());
         let user = resolve_user(pamh, requesting_uid);
 
         if !display::detect_for_user(requesting_uid) {
@@ -84,7 +97,7 @@ impl PamHooks for PamSentinel {
         // for this (loginuid, session, service, exe) short-circuits to
         // allow without a dialog. Bound to the login session so it can't
         // be replayed elsewhere; see the `timestamp` module.
-        let ppid = unsafe { libc_getppid() };
+        let ppid = getppid();
         let binding = timestamp::Binding {
             loginuid: read_proc_u32(ppid, "loginuid"),
             sessionid: read_proc_u32(ppid, "sessionid"),
@@ -164,7 +177,7 @@ fn handle_headless(cfg: &ServiceConfig, service: &str, user: &str) -> PamResultC
     // The user's actual process (their shell, typically) is the
     // parent of the privileged binary that dlopened us. That's the
     // env we want for session enrichment.
-    let session = logfmt_session_for_pid(unsafe { libc_getppid() });
+    let session = logfmt_session_for_pid(getppid());
 
     // Emit a `auth.headless` discriminator before the action-specific
     // line so journalctl filters distinguish "we tried to dialog the
@@ -232,7 +245,7 @@ fn check_policy(
         PolicyDecision::Ask => return None,
     };
     if cfg.log_attempts {
-        let session = logfmt_session_for_pid(unsafe { libc_getppid() });
+        let session = logfmt_session_for_pid(getppid());
         log::info!(
             "event={event} source=policy user={} service={} process={} exe={} uid={}{}",
             q(user),
@@ -277,7 +290,7 @@ fn spawn_dialog(
     // Session enrichment via the user's process env (getppid() of
     // the privileged binary we're loaded into). Empty string on
     // any failure — see logfmt_session_for_pid.
-    let session = logfmt_session_for_pid(unsafe { libc_getppid() });
+    let session = logfmt_session_for_pid(getppid());
 
     if cfg.log_attempts {
         match &result {
@@ -329,27 +342,21 @@ fn init_logger(debug: bool) {
     });
 }
 
-// -------------- libc shims + caller-uid lookup ----------------------------
+// -------------- pid/uid lookup + caller-uid lookup ------------------------
 
-unsafe extern "C" {
-    #[link_name = "getuid"]
-    fn libc_getuid_raw() -> u32;
-    #[link_name = "getppid"]
-    fn libc_getppid_raw() -> i32;
-    #[link_name = "getpid"]
-    fn libc_getpid_raw() -> i32;
+// `getpid`/`getppid`/`getuid` via `nix` — always-safe syscall wrappers,
+// so no `unsafe` (and no hand-rolled `extern "C"`) is needed. Thin
+// adapters to the `i32`/`u32` the call sites want.
+fn getpid() -> i32 {
+    nix::unistd::getpid().as_raw()
 }
 
-pub(crate) unsafe fn libc_getuid() -> u32 {
-    unsafe { libc_getuid_raw() }
+fn getppid() -> i32 {
+    nix::unistd::getppid().as_raw()
 }
 
-pub(crate) unsafe fn libc_getppid() -> i32 {
-    unsafe { libc_getppid_raw() }
-}
-
-pub(crate) unsafe fn libc_getpid() -> i32 {
-    unsafe { libc_getpid_raw() }
+fn getuid() -> u32 {
+    nix::unistd::getuid().as_raw()
 }
 
 /// Identify the calling (human) user, even when the immediate PAM
@@ -382,7 +389,7 @@ pub(crate) fn caller_uid(ppid: i32) -> u32 {
             }
         }
     }
-    unsafe { libc_getuid() }
+    getuid()
 }
 
 /// Read a single-`u32` `/proc/<ppid>/<field>` such as `loginuid` or

@@ -8,6 +8,16 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- **Hardened the PAM module's `unsafe` surface.** `pam-sentinel` (root
+  code) is now `#![deny(unsafe_code)]`. The hand-rolled `extern "C"`
+  `getpid`/`getppid`/`getuid` shims are replaced with safe `nix`
+  wrappers, leaving only two genuinely-unsafe operations — `fork(2)` and
+  post-fork `set_var` — behind narrowly-scoped, `SAFETY`-documented
+  `#[allow(unsafe_code)]` sites. New `unsafe` anywhere else is now a
+  compile error.
+
 ## [0.11.1] — 2026-06-20
 
 Packaging hotfix for 0.11.0 — no runtime, config, or auth-path change.

@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 
 /// Locate the user's Wayland display, populating WAYLAND_DISPLAY and
 /// XDG_RUNTIME_DIR if not already set. Returns true on success.
+// `std::env::set_var` is `unsafe` (edition 2024); contained here (crate
+// is `#![deny(unsafe_code)]`). See the SAFETY note at the call.
+#[allow(unsafe_code)]
 pub fn detect_for_user(uid: u32) -> bool {
     if let Ok(v) = std::env::var("WAYLAND_DISPLAY") {
         if !v.is_empty() {
