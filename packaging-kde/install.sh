@@ -219,14 +219,15 @@ revert_previous_install
 
 # -------------- build (as the invoking user, not root) ---------------------
 
-BUILD_CRATES=(-p pam-sentinel -p sentinel-polkit-agent -p sentinel-helper-kde)
+BUILD_CRATES=(-p pam-sentinel -p sentinel-polkit-agent -p sentinel-helper-kde -p sentinel-broker)
 
 # Reuse prebuilt artifacts when they're all present (the common case after a
 # `cargo build`); build only when something's missing or --rebuild is given.
 artifacts_present() {
     [[ -f target/release/libpam_sentinel.so \
        && -f target/release/sentinel-polkit-agent \
-       && -f target/release/sentinel-helper-kde ]]
+       && -f target/release/sentinel-helper-kde \
+       && -f target/release/sentinel-broker ]]
 }
 if [[ $FORCE_BUILD -eq 0 ]] && artifacts_present; then
     step "Using existing target/release artifacts (pass --rebuild to force a build)."
@@ -243,7 +244,7 @@ else
     fi
 fi
 
-for a in libpam_sentinel.so sentinel-polkit-agent sentinel-helper-kde; do
+for a in libpam_sentinel.so sentinel-polkit-agent sentinel-helper-kde sentinel-broker; do
     [[ -f "target/release/$a" ]] || error "Build artifact missing: target/release/$a"
 done
 
@@ -255,6 +256,7 @@ printf 'VERSION\t%s\t\n' "$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.tom
 step "Installing system files…"
 install_file 755 target/release/sentinel-helper-kde   "$HELPER_PATH"
 install_file 755 target/release/sentinel-polkit-agent "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
+install_file 755 target/release/sentinel-broker       "$PREFIX/$LIBEXECDIR/sentinel-broker"
 # pam_sentinel.so needs 0755 — some polkit helper sandboxes (NoNewPrivileges)
 # make libpam refuse to dlopen .so files without the executable bit.
 install_file 755 target/release/libpam_sentinel.so    "$PAM_MODULE_DIR/pam_sentinel.so"
@@ -281,6 +283,18 @@ install_file 644 packaging-kde/packaging/dbus/org.sentinel.Agent.conf \
 # Reload the system bus so it picks up the new policy before the agent (below)
 # tries to claim the name. reload (SIGHUP), not restart — no client disconnects.
 systemctl reload dbus.service 2>/dev/null || systemctl reload dbus-broker.service 2>/dev/null || true
+
+# Remember-decision broker (system service): backs the terminal sudo/su
+# remember window. Unprivileged daemon (DynamicUser); pam_sentinel relays
+# to it over a Unix socket and fails closed if it's down. ExecStart is
+# templated to the chosen libexec dir.
+BROKER_UNIT_TMP="$(mktemp)"
+sed "s|@LIBEXEC@|$PREFIX/$LIBEXECDIR|" packaging/systemd/sentinel-broker.service > "$BROKER_UNIT_TMP"
+install_file 644 "$BROKER_UNIT_TMP" "$SYSCONFDIR/systemd/system/sentinel-broker.service"
+rm -f "$BROKER_UNIT_TMP"
+# Enable+start now when systemd is the init (skipped cleanly in containers).
+systemctl daemon-reload 2>/dev/null || true
+systemctl enable --now sentinel-broker.service 2>/dev/null || true
 
 # Polkit admin rule: Sentinel's no-password model needs the logged-in user
 # to be a polkit administrator (you confirm your own escalation). Without

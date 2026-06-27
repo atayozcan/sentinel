@@ -51,6 +51,10 @@ user_systemctl() {
         systemctl --user "$@" 2>/dev/null || warn "systemctl --user $* failed (continuing)"
 }
 
+# Stop + disable the system broker before its unit/binary are removed
+# (by the state loop or fallback below). Guarded for non-systemd envs.
+systemctl disable --now sentinel-broker.service 2>/dev/null || true
+
 # -------------- state-file driven uninstall --------------------------------
 
 if [[ -f "$STATE_FILE" ]]; then
@@ -119,7 +123,9 @@ FALLBACK_PATHS=(
     "/usr/lib/security/pam_sentinel.so"
     "$PREFIX/$LIBEXECDIR/sentinel-helper-kde"
     "$PREFIX/$LIBEXECDIR/sentinel-polkit-agent"
+    "$PREFIX/$LIBEXECDIR/sentinel-broker"
     "$PREFIX/lib/systemd/user/sentinel-polkit-agent.service"
+    "$SYSCONFDIR/systemd/system/sentinel-broker.service"
     "$SYSCONFDIR/security/sentinel.conf"
     "$SYSCONFDIR/pam.d/polkit-1"
     "$SYSCONFDIR/pam.d/sudo"

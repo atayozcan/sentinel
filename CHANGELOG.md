@@ -86,6 +86,15 @@ following [Semantic Versioning](https://semver.org/).
   (`sentinel_shared::remember_eligible_command`) so the polkit and PAM
   paths apply the **same** rule. Both paths now bind remember to the whole
   command.
+- **KDE installer ships the broker; terminal remember enabled.** The KDE
+  installer (`packaging-kde/install.sh`) now builds, installs, and enables
+  `sentinel-broker` (the missing piece that backs terminal remember), and
+  uninstall tears it down. The shipped `config/sentinel.conf` opts
+  `[services.sudo]` / `[services.sudo-i]` / `[services.su]` into
+  `remember_seconds = 300`, so sudo/su now show the per-command "Remember"
+  checkbox. (Compiled default for terminal stays `0`; the shipped config
+  opts in. A remembered grant makes a repeat of the *same* command
+  passwordless for the window — per-command, shell-excluded.)
 
 ## [0.11.1] — 2026-06-20
 
