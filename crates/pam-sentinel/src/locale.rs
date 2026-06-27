@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Locale variable propagation from the requesting user's process to
-//! the spawned `sentinel-helper`.
+//! the spawned `sentinel-helper-kde`.
 //!
 //! When `pam_sentinel.so` runs inside a privileged binary (sudo,
 //! polkit-agent-helper-1, su), the process environment has been
@@ -36,8 +36,8 @@
 use std::collections::HashMap;
 
 /// Variable names we forward into the helper child. Order doesn't
-/// matter for correctness — fluent-langneg picks the first valid
-/// entry.
+/// matter for correctness — all are set in the child's environment and
+/// the helper resolves the locale from them in its own priority order.
 pub const FORWARDED_VARS: &[&str] = &["LC_ALL", "LC_MESSAGES", "LANG"];
 
 /// Return the subset of [`FORWARDED_VARS`] set in `/proc/<pid>/environ`

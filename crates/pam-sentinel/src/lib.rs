@@ -9,7 +9,7 @@
 //! * **bypass**: the Sentinel polkit agent already pre-approved this
 //!   auth (we connect to its Unix socket and read "OK"). Return
 //!   `PAM_SUCCESS` immediately. See [`agent_bypass`].
-//! * **dialog**: spawn `sentinel-helper` to render the confirmation UI;
+//! * **dialog**: spawn `sentinel-helper-kde` to render the confirmation UI;
 //!   return `PAM_SUCCESS` on Allow, `PAM_AUTH_ERR` on Deny / timeout.
 //! * **headless**: no Wayland display; return whatever
 //!   `headless_action` says (default `PAM_IGNORE` so the next module

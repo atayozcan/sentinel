@@ -31,7 +31,7 @@ mkdir -p "$DIST"
 echo "==> Building release ($VERSION, $ARCH)…"
 SENTINEL_PREFIX=/usr SENTINEL_SYSCONFDIR=/etc SENTINEL_LIBEXECDIR=lib \
 SENTINEL_HELPER_PATH=/usr/lib/sentinel-helper-kde \
-    cargo build --release --workspace --exclude sentinel-helper --locked
+    cargo build --release --workspace --locked
 
 # ---------------------------------------------------------------------------
 # Source tarball — generated only on the primary arch (git archive is
@@ -60,6 +60,7 @@ ROOT="$STAGE/sentinel-kde-$VERSION"
 mkdir -p "$ROOT/target/release"
 install -Dm755 target/release/libpam_sentinel.so    "$ROOT/target/release/libpam_sentinel.so"
 install -Dm755 target/release/sentinel-polkit-agent "$ROOT/target/release/sentinel-polkit-agent"
+install -Dm755 target/release/sentinel-broker       "$ROOT/target/release/sentinel-broker"
 install -Dm755 target/release/sentinel-helper-kde   "$ROOT/target/release/sentinel-helper-kde"
 # Everything install.sh reads at SKIP_BUILD time. The KDE installer +
 # its packaging dir live under packaging-kde/; the shared workspace

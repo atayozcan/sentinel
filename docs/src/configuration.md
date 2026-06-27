@@ -249,18 +249,15 @@ enabled = false
 The helper's UI chrome (button labels, "Show details" toggle, "Auto-deny
 in Ns") is localized from the system locale (`LC_ALL`/`LC_MESSAGES`/`LANG`).
 
-- The **COSMIC** helper (`sentinel-helper`) ships 12 locales via fluent:
-  en-US, de-DE, es-ES, fr-FR, it-IT, ja-JP, nl-NL, pl-PL, pt-BR, ru-RU,
-  tr-TR, zh-CN.
-- The **KDE** helper (`sentinel-helper-kde`) localizes the same chrome via
-  `sentinel_shared::ui_i18n` — all 12 locales (en, de, es, fr, it, ja, nl, pl, pt, ru, tr, zh), matching the
-  COSMIC frontend.
+The KDE helper (`sentinel-helper-kde`) localizes this chrome via
+`sentinel_shared::ui_i18n`, which ships 12 languages: en, de, es, fr, it,
+ja, nl, pl, pt, ru, tr, zh.
 
 The dialog message/title/secondary are admin-supplied via this config
 file — they're rendered verbatim as you write them. If you leave the
 defaults (`title`, `message`), the helper substitutes the locale's
 own translation; once you customise them, your text wins.
 
-Locale resolution: `LC_ALL` → `LC_MESSAGES` → `LANG`, with the helper
-canonicalising to BCP-47 (`tr_TR.UTF-8` → `tr-TR`) and falling back to
-`en-US` for unknown values.
+Locale resolution: `LC_ALL` → `LC_MESSAGES` → `LANG`, reduced to its
+2-letter language code (`tr_TR.UTF-8` → `tr`), falling back to `en` for
+unknown or unset values.

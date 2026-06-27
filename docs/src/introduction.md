@@ -1,25 +1,19 @@
 # Sentinel
 
 A Windows UAC-style confirmation dialog for Linux privilege escalation,
-delivered as a shared PAM + polkit-agent backend plus **two desktop
-frontends**: `sentinel-helper-kde` (KDE Plasma / Kirigami) and
-`sentinel-helper` (COSMIC / libcosmic). Wayland-only, `sudo-rs`
-friendly; runs on cosmic-comp, KWin/Wayland, Hyprland, Sway, Niri,
-River, Wayfire.
-
-> This is a monorepo: the former `sentinel-kde` and `sentinel-cosmic`
-> projects share one backend and release in lockstep. Pick the frontend
-> package for your desktop — see [Installation](./installation.md).
+delivered as a shared PAM + polkit-agent backend plus a native KDE
+Plasma (Kirigami) desktop frontend, `sentinel-helper-kde`. Wayland-only,
+`sudo-rs` friendly; the layer-shell dialog renders on KWin/Wayland and
+other wlroots-style compositors (Hyprland, Sway, Niri, River, Wayfire).
 
 ## What it does
 
 When a privileged binary's PAM stack hits `pam_sentinel.so` (typically
 `/etc/pam.d/polkit-1` and optionally `/etc/pam.d/sudo`), the polkit
-agent spawns the frontend helper — `sentinel-helper-kde` on Plasma,
-`sentinel-helper` on COSMIC. The helper paints a `zwlr-layer-shell-v1`
-overlay surface — full-screen translucent backdrop, exclusive keyboard
-focus, dialog card centered — and waits for **Allow**, **Deny**, or a
-configurable timeout (auto-deny).
+agent spawns the frontend helper, `sentinel-helper-kde`. The helper
+paints a `zwlr-layer-shell-v1` overlay surface — full-screen translucent
+backdrop, exclusive keyboard focus, dialog card centered — and waits for
+**Allow**, **Deny**, or a configurable timeout (auto-deny).
 
 - **Allow** → PAM passes auth without a password.
 - **Deny / timeout / no Wayland display** → PAM continues to the next

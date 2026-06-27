@@ -8,7 +8,7 @@ touch host security infrastructure). There is no supported path to
 install a PAM module from a Flatpak.
 
 That makes the load-bearing piece host-only. The companion
-`sentinel-helper` GUI binary could in principle be Flatpak'd alone, but:
+`sentinel-helper-kde` GUI binary could in principle be Flatpak'd alone, but:
 
 1. The PAM module hardcodes the helper path at build time
    (`SENTINEL_PREFIX`/`SENTINEL_LIBEXECDIR`). A Flatpak helper lives at

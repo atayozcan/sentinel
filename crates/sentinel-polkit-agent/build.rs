@@ -15,7 +15,7 @@ fn main() {
     let helper_path = std::env::var("SENTINEL_HELPER_PATH").unwrap_or_else(|_| {
         PathBuf::from(&prefix)
             .join(&libexecdir)
-            .join("sentinel-helper")
+            .join("sentinel-helper-kde")
             .display()
             .to_string()
     });

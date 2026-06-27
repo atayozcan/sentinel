@@ -5,11 +5,6 @@
 # one weekly PR per ecosystem; major bumps each get their own PR
 # because they often need code changes (we manually bumped
 # clap_mangen 0.2 → 0.3 this way).
-#
-# Pinned-by-rev deps (libcosmic) are NOT auto-bumped — Dependabot
-# doesn't track git rev= sources. Bump those manually after
-# smoke-testing, per the procedure documented on the libcosmic
-# dependency line in crates/sentinel-helper/Cargo.toml.
 
 version: 2
 updates:

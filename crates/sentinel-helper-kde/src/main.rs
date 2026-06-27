@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! KDE Plasma-native confirmation helper for Sentinel.
 //!
-//! A drop-in alternative to the COSMIC `sentinel-helper`: same CLI flags
-//! (parsed via `sentinel_shared::cli`), same `ALLOW`/`DENY`/`TIMEOUT`
+//! Parses the shared CLI flags (via `sentinel_shared::cli`) and honors the
+//! `ALLOW`/`DENY`/`TIMEOUT`
 //! stdout contract. Renders a Breeze/Kirigami dialog as a
 //! `zwlr-layer-shell-v1` overlay (fullscreen, exclusive keyboard) on
 //! Plasma/wlroots compositors, falling back to a normal window on

@@ -73,8 +73,7 @@ pub mod qobject {
 
         /// Localized UI string lookup, replacing `qsTr()` in QML. Keys
         /// like `"allow"`, `"deny"`, `"auto-deny-in"`; see
-        /// `sentinel_shared::ui_i18n`. Translations are shared with the
-        /// COSMIC frontend's locale set.
+        /// `sentinel_shared::ui_i18n`.
         #[qinvokable]
         fn translate(&self, key: &QString) -> QString;
     }

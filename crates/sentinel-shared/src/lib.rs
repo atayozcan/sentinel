@@ -34,13 +34,13 @@ use std::path::{Path, PathBuf};
 
 pub mod audit;
 
-/// UI-string localization for the KDE helper (the COSMIC helper uses
-/// fluent directly). Keyed lookups mirroring the fluent bundles.
+/// UI-string localization for the KDE helper: keyed lookups for the
+/// dialog's UI chrome, with English as the source/fallback.
 pub mod ui_i18n;
 
-/// CLI surface shared by the helper frontends (COSMIC + Plasma). Gated
-/// behind the `cli` feature so the PAM module and polkit agent — which
-/// never parse these args — don't pull in `clap`.
+/// CLI surface for the KDE helper frontend (`sentinel-helper-kde`).
+/// Gated behind the `cli` feature so the PAM module and polkit agent —
+/// which never parse these args — don't pull in `clap`.
 #[cfg(feature = "cli")]
 pub mod cli;
 
@@ -597,8 +597,7 @@ pub fn format_message(template: &str, user: &str, service: &str, process: &str) 
 // Default appearance strings, exposed as `pub const` so the helper can
 // detect "this is still the built-in default, translate it" vs "admin
 // customized this, use as-is". If you change a const here, update the
-// matching `dialog-{title,message}-default` keys in every
-// `crates/sentinel-helper/locales/<lang>/sentinel-helper.ftl`.
+// matching default translations in the KDE helper's `ui_i18n` module.
 pub const DEFAULT_TITLE: &str = "Authentication Required";
 pub const DEFAULT_MESSAGE: &str = "The application \"%p\" is requesting elevated privileges.";
 /// Empty by default. The original 0.5.x default named the buttons
@@ -750,9 +749,8 @@ pub const FALLBACK_ICON_NAME: &str = "system-lock-screen";
 
 /// Icon-theme name to display for a requesting executable: the exe's
 /// basename (e.g. `/usr/bin/firefox` → `firefox`). `None` when there's
-/// no exe to derive a name from. Frontends apply their own theme
-/// fallback ([`FALLBACK_ICON_NAME`]) when the name doesn't resolve, so
-/// the COSMIC and Plasma helpers agree on icon selection.
+/// no exe to derive a name from. The helper applies its own theme
+/// fallback ([`FALLBACK_ICON_NAME`]) when the name doesn't resolve.
 pub fn resolve_icon_name(process_exe: Option<&str>) -> Option<String> {
     process_exe.and_then(process_basename).map(str::to_string)
 }

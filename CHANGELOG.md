@@ -10,6 +10,24 @@ following [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-06-27
+
+KDE-only. The COSMIC frontend is removed — Sentinel now ships a single KDE
+Plasma helper.
+
+### Removed
+
+- **COSMIC frontend dropped.** The `sentinel-helper` (libcosmic) crate and
+  its fluent locale bundles, the COSMIC root `install.sh` / `uninstall.sh`,
+  the `sentinel-cosmic` Arch package, and the `build-cosmic` /
+  `publish-aur-cosmic` release jobs are all removed. The shared auth backend
+  (PAM module, polkit agent, broker) is unchanged; the KDE helper
+  (`sentinel-helper-kde`, AUR package `sentinel-kde`) is now the only
+  frontend. This collapses the two divergent installers into one, drops the
+  entire libcosmic dependency tree (and its `deny.toml` / `cargo audit`
+  carve-outs), and makes `sentinel-helper-kde` the default baked helper
+  path. No config or auth-path behavior change.
+
 ## [0.12.0] — 2026-06-27
 
 Privilege-separation broker, a reworked per-command "remember" model, and

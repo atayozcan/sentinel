@@ -117,14 +117,14 @@ async fn run(args: Args) -> Result<()> {
         .await
         .context("build Authority proxy")?;
 
-    // Retry loop: another polkit agent (cosmic-osd, polkit-gnome,
-    // polkit-kde, …) may currently hold the registration, especially
-    // right after install.sh's restart-in-place flow where the
-    // compositor's supervisor races us to respawn its own agent. We
-    // back off and retry; if the competitor eventually exits, gets
-    // killed, or backs off, we win. Compositors that hard-respawn
-    // their agent forever (cosmic-session → cosmic-osd) are not
-    // solvable from this side — see the install.sh diagnostic.
+    // Retry loop: another polkit agent (polkit-kde, polkit-gnome, …)
+    // may currently hold the registration, especially right after
+    // install.sh's restart-in-place flow where the desktop's session
+    // manager races us to respawn its own agent. We back off and retry;
+    // if the competitor eventually exits, gets killed, or backs off, we
+    // win. A desktop whose session manager hard-respawns its built-in
+    // agent forever is not solvable from this side — see the install.sh
+    // diagnostic.
     const REGISTER_RETRIES: u32 = 8;
     const REGISTER_BACKOFF: std::time::Duration = std::time::Duration::from_millis(500);
     let mut last_err: Option<zbus::Error> = None;

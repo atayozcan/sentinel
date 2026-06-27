@@ -100,7 +100,7 @@ impl Agent {
 
         // Polkit defines `details["program"]` / `details["command_line"]`
         // for `org.freedesktop.policykit.exec`, but in practice (polkit
-        // 0.130 + cosmic) doesn't forward them to the agent.
+        // 0.130 + polkit-kde) doesn't forward them to the agent.
         // Independently of action_id, we try to recover the elevated
         // command from the caller's `/proc/<pid>/cmdline` — when the
         // caller is an elevation tool (pkexec, sudo, etc), stripping

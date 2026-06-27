@@ -41,7 +41,7 @@ body:
       multiple: true
       options:
         - pam_sentinel.so (PAM module)
-        - sentinel-helper (dialog UI)
+        - sentinel-helper-kde (dialog UI)
         - sentinel-polkit-agent
         - sentinel-shared / TOML schema
         - install.sh / packaging

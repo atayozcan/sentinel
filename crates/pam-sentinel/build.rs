@@ -13,11 +13,10 @@ fn main() {
 
     // Honor an explicit SENTINEL_HELPER_PATH override (matching
     // sentinel-polkit-agent's build.rs) so a packager can point the PAM
-    // module at a non-default helper — e.g. the Plasma helper at
-    // /usr/bin/sentinel-helper-kde — without symlinking it into the
-    // default location. Falls back to the computed default otherwise.
+    // module at a non-default helper location. Falls back to the Plasma
+    // helper (`sentinel-helper-kde`) in the computed libexec dir.
     let helper_path = std::env::var("SENTINEL_HELPER_PATH")
-        .unwrap_or_else(|_| format!("{prefix}/{libexecdir}/sentinel-helper"));
+        .unwrap_or_else(|_| format!("{prefix}/{libexecdir}/sentinel-helper-kde"));
 
     println!("cargo:rustc-env=SENTINEL_HELPER_PATH={helper_path}");
 }

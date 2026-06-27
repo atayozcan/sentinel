@@ -50,7 +50,7 @@ cd "$REPO_ROOT"
 cleanup() {
     set +e
     rm -f /usr/lib/security/pam_sentinel.so \
-          /usr/lib/sentinel-helper \
+          /usr/lib/sentinel-helper-kde \
           /etc/security/sentinel.conf \
           /etc/pam.d/sentinel-test
     echo
@@ -59,7 +59,7 @@ cleanup() {
 trap cleanup EXIT
 
 install -Dm644 target/release/libpam_sentinel.so /usr/lib/security/pam_sentinel.so
-install -Dm755 target/release/sentinel-helper    /usr/lib/sentinel-helper
+install -Dm755 target/release/sentinel-helper-kde    /usr/lib/sentinel-helper-kde
 install -Dm644 config/sentinel.conf              /etc/security/sentinel.conf
 
 cat > /etc/pam.d/sentinel-test <<EOF
@@ -72,7 +72,7 @@ chmod 644 /etc/pam.d/sentinel-test
 
 echo
 echo ">>> Authenticating user '$REAL_USER' against service 'sentinel-test'."
-echo ">>> The Sentinel dialog should appear in your COSMIC session."
+echo ">>> The Sentinel dialog should appear in your Plasma session."
 echo
 
 probe_started=$(date '+%Y-%m-%d %H:%M:%S')

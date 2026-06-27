@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Spawn `sentinel-helper` to render the confirmation dialog and parse its
-//! ALLOW / DENY / TIMEOUT verdict from stdout.
+//! Spawn `sentinel-helper-kde` to render the confirmation dialog and parse
+//! its ALLOW / DENY / TIMEOUT verdict from stdout.
 //!
 //! Unlike `pam-sentinel`'s helper.rs, the agent already runs as the
 //! requesting user — no fork/setuid dance needed. Just `tokio::process`.

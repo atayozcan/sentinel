@@ -22,7 +22,6 @@ body:
       label: Compositor
       description: Which Wayland compositor did you test on?
       options:
-        - cosmic-comp (COSMIC)
         - Hyprland
         - Sway
         - Niri
@@ -40,8 +39,8 @@ body:
     id: compositor_version
     attributes:
       label: Compositor version
-      description: Output of e.g. `cosmic-comp --version`, `hyprctl version`, `sway --version`, `kwin_wayland --version`
-      placeholder: e.g. cosmic-comp 1.0.0-alpha.5
+      description: Output of e.g. `hyprctl version`, `sway --version`, `kwin_wayland --version`
+      placeholder: e.g. kwin_wayland 6.2.0
 
   - type: dropdown
     id: result
@@ -55,7 +54,7 @@ body:
         - "✗ Failed — agent didn't autostart"
         - "✗ Failed — dialog didn't appear"
         - "✗ Failed — dialog appeared but didn't get keyboard focus"
-        - "✗ Failed — polkit registration race lost (cosmic-osd / etc.)"
+        - "✗ Failed — polkit registration race lost (polkit-kde / etc.)"
         - "✗ Failed — other (describe below)"
     validations:
       required: true
@@ -64,7 +63,7 @@ body:
     id: sentinel_version
     attributes:
       label: Sentinel version
-      description: Output of `sentinel-helper --version` (or `pacman -Qi sentinel`, `dpkg -s sentinel`, etc.)
+      description: Output of `sentinel-helper-kde --version` (or `pacman -Qi sentinel-kde`, etc.)
       placeholder: e.g. 0.7.0
     validations:
       required: true
@@ -83,7 +82,7 @@ body:
     attributes:
       label: XDG_CURRENT_DESKTOP / XDG_SESSION_TYPE
       description: Output of `echo "$XDG_CURRENT_DESKTOP / $XDG_SESSION_TYPE"`. Sentinel uses `XDG_CURRENT_DESKTOP` to decide when to auto-fall-back to windowed mode; mismatches with the compositor name are common.
-      placeholder: e.g. COSMIC / wayland
+      placeholder: e.g. KDE / wayland
     validations:
       required: true
 
@@ -93,7 +92,7 @@ body:
       label: How did you trigger the dialog?
       description: e.g. `pkexec true`, `sudo apt update`, clicked the GParted launcher, ran `topgrade`, etc. Tells us which auth path you exercised.
       placeholder: |
-        1. Opened a terminal under cosmic-comp
+        1. Opened a terminal under KWin/Wayland
         2. Ran `pkexec true`
         3. Sentinel dialog appeared / didn't appear
     validations:

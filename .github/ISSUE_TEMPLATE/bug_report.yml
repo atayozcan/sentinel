@@ -17,7 +17,7 @@ body:
     id: version
     attributes:
       label: Sentinel version
-      description: Output of `sentinel-helper --version` (or your distro package version)
+      description: Output of `sentinel-helper-kde --version` (or your distro package version)
       placeholder: e.g. 0.5.0
     validations:
       required: true
@@ -26,8 +26,8 @@ body:
     id: installed_via
     attributes:
       label: Installed via
-      description: AUR (sentinel / sentinel-git), Debian, RPM, Nix, source tarball, `pkexec ./install.sh`, …
-      placeholder: e.g. AUR sentinel-git
+      description: AUR (sentinel-kde), RPM, Nix, source tarball, `pkexec ./packaging-kde/install.sh`, …
+      placeholder: e.g. AUR sentinel-kde
     validations:
       required: true
 
@@ -45,7 +45,7 @@ body:
     attributes:
       label: Compositor / desktop
       description: Output of `echo "$XDG_CURRENT_DESKTOP $XDG_SESSION_TYPE"`
-      placeholder: e.g. COSMIC wayland
+      placeholder: e.g. KDE wayland
     validations:
       required: true
 

@@ -3,7 +3,7 @@
 ## Toolchain
 
 - Rust **1.85+** (workspace MSRV pinned in `rust-toolchain.toml`).
-- **Backend + COSMIC helper** deps: `libpam0g-dev`, `libxkbcommon-dev`,
+- **Backend + KDE helper** native deps: `libpam0g-dev`, `libxkbcommon-dev`,
   `libwayland-dev`, `libfontconfig1-dev`, `libfreetype6-dev`,
   `pkg-config`. (Arch: `pam wayland libxkbcommon fontconfig
   freetype2 mesa vulkan-icd-loader`.)
@@ -23,17 +23,15 @@ build skips both GUI toolchains. Build a frontend explicitly.
 git clone https://github.com/atayozcan/sentinel
 cd sentinel
 
-cargo build --release --locked                          # backend only (no Qt / libcosmic)
-cargo build --release --locked -p sentinel-helper       # + COSMIC frontend
+cargo build --release --locked                          # backend only (no Qt)
 cargo build --release --locked -p sentinel-helper-kde   # + KDE frontend
-# `--workspace` builds everything, but then needs BOTH Qt and libcosmic.
+# `--workspace` builds everything, including the Qt-based KDE helper.
 ```
 
 This produces:
 
 - `target/release/libpam_sentinel.so` — the cdylib
 - `target/release/sentinel-polkit-agent` — the polkit agent
-- `target/release/sentinel-helper` — the COSMIC (libcosmic) dialog
 - `target/release/sentinel-helper-kde` — the KDE (Kirigami) dialog
 
 ## Running tests
@@ -71,7 +69,7 @@ so they always know where to spawn it from.
 ## Test it locally without an install
 
 ```bash
-./scripts/dev-test.sh
+./packaging-kde/scripts/dev-test.sh
 ```
 
 This installs to system paths, compiles a small `pam_authtest` probe
@@ -83,27 +81,27 @@ clobbering of your real config).
 ## Building distribution packages
 
 ```bash
-./scripts/build-release.sh 0.8.0
+./packaging-kde/scripts/build-release.sh 0.8.0
 ```
 
 Produces `dist/`:
-- `sentinel-0.8.0.tar.gz` (source)
-- `sentinel-0.8.0-x86_64-linux.tar.gz` (binary, install layout)
+- `sentinel-kde-0.8.0.tar.gz` (source)
+- `sentinel-kde-0.8.0-x86_64-linux.tar.gz` (binary, install layout)
 - per-arch `.sha256` files
 
-For deb/rpm:
+For an RPM:
 ```bash
-cargo deb --no-build -p sentinel-helper
-cargo generate-rpm -p crates/sentinel-helper
+cargo generate-rpm -p crates/sentinel-helper-kde
 ```
 
 ## Shell completions and man pages
 
-The two binaries auto-generate completions and man pages:
+`sentinel-polkit-agent` auto-generates its shell completions and man
+page:
 
 ```bash
-sentinel-helper completions bash > /etc/bash_completion.d/sentinel-helper
-sentinel-helper man > /usr/share/man/man1/sentinel-helper.1
+sentinel-polkit-agent completions bash > /etc/bash_completion.d/sentinel-polkit-agent
+sentinel-polkit-agent man > /usr/share/man/man1/sentinel-polkit-agent.1
 ```
 
 The release tarballs and packages ship these pre-rendered.

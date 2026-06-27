@@ -29,17 +29,16 @@ agent socket listening at /run/user/1000/sentinel-agent.sock
 registered as polkit auth agent (object path /com/github/sentinel/PolkitAgent)
 ```
 
-**If "another agent is registered, retrying":** something else
-(cosmic-osd, polkit-gnome, polkit-kde) is winning the registration
-race. The install script tries to kill them; on COSMIC,
-`cosmic-session` will respawn `cosmic-osd` aggressively. Workaround:
+**If "another agent is registered, retrying":** another polkit agent
+(polkit-kde, polkit-gnome, …) is winning the registration race. On
+Plasma the installer masks `plasma-polkit-agent.service` so Sentinel is
+the session's sole agent; if it crept back, mask it again and restart
+the Sentinel unit:
 
 ```bash
-pkexec chmod -x /usr/bin/cosmic-osd
+systemctl --user mask plasma-polkit-agent.service
+systemctl --user restart sentinel-polkit-agent.service
 ```
-
-(Loses brightness/volume OSDs but keeps Sentinel as the sole polkit
-agent.)
 
 **If the agent is running but the dialog still doesn't show:**
 likely the compositor doesn't implement `zwlr-layer-shell-v1`.
@@ -47,7 +46,7 @@ Sentinel auto-falls-back to xdg-toplevel on GNOME/Mutter, but force
 it with:
 
 ```bash
-sentinel-helper --windowed --title test --message hi
+sentinel-helper-kde --windowed --title test --message hi
 ```
 
 ## `pkexec` shows "Error executing command as another user: Not authorized"
@@ -65,7 +64,7 @@ versions read `/proc/<sudo-pid>/exe` without stripping the elevation
 wrapper.
 
 ```bash
-sentinel-helper --version
+sentinel-helper-kde --version
 ```
 
 ## `sudo -v` (or topgrade / paru cred-cache) shows "sudo-rs" not the
@@ -91,9 +90,9 @@ LANG=tr_TR.UTF-8 pkexec true
 Should render the Turkish dialog. If it doesn't:
 
 - Check `/proc/<your-shell-pid>/environ` actually has `LANG=...`
-- Check the locale tag is one of the 12 shipped: en-US, de-DE,
-  es-ES, fr-FR, it-IT, ja-JP, nl-NL, pl-PL, pt-BR, ru-RU, tr-TR,
-  zh-CN. Other tags fall back to en-US.
+- Check the locale's language code is one of the 12 shipped: en, de,
+  es, fr, it, ja, nl, pl, pt, ru, tr, zh. Other languages fall back
+  to English.
 
 ## I want more verbose logs
 

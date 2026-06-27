@@ -225,8 +225,8 @@ user_systemctl() {
 
 # Replace semantics: if a previous install is recorded, cleanly revert it
 # first. This makes re-installs idempotent, repairs a broken/partial prior
-# state, and means installing the new build over an old one (even the
-# COSMIC `sentinel`) leaves nothing orphaned. Best-effort throughout — a
+# state, and means installing the new build over an old one leaves nothing
+# orphaned. Best-effort throughout — a
 # missing backup or stale entry must never abort the fresh install.
 revert_previous_install() {
     [[ -f "$STATE_FILE" ]] || return 0

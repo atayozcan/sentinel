@@ -22,76 +22,6 @@ env:
 
 jobs:
   # ===========================================================================
-  # COSMIC frontend bundle (+ .deb / .rpm). Ubuntu runners, x86_64 + aarch64.
-  # ===========================================================================
-  build-cosmic:
-    name: build cosmic (${{ matrix.arch }})
-    runs-on: ${{ matrix.runs-on }}
-    permissions:
-      id-token: write
-      attestations: write
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runs-on: ubuntu-latest
-          - arch: aarch64
-            runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Install build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libpam0g-dev libxkbcommon-dev libwayland-dev \
-            libfontconfig1-dev libfreetype6-dev pkg-config mold
-
-      - name: Install rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-deb and cargo-generate-rpm
-        run: |
-          cargo install --locked cargo-deb
-          cargo install --locked cargo-generate-rpm
-
-      - name: Resolve version
-        id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Build tarballs (cosmic)
-        run: ./scripts/build-release.sh "${{ steps.ver.outputs.version }}"
-
-      - name: Build .deb
-        run: |
-          cargo deb --no-build -p sentinel-helper
-          mkdir -p dist && mv target/debian/*.deb dist/
-
-      - name: Build .rpm
-        run: cargo generate-rpm -p crates/sentinel-helper --output dist/
-
-      - name: Attest release artefacts
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-path: |
-            dist/*.deb
-            dist/*.rpm
-            dist/*.tar.gz
-
-      - name: Upload artefacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: cosmic-${{ steps.ver.outputs.version }}-${{ matrix.arch }}
-          path: dist/
-
-  # ===========================================================================
   # KDE/Plasma frontend bundle. openSUSE Tumbleweed container (Qt6 + KF6),
   # x86_64 + aarch64. Tarball-only (ships via AUR + source bundle).
   # ===========================================================================
@@ -162,10 +92,10 @@ jobs:
           path: dist/
 
   # ===========================================================================
-  # Single GitHub release carrying both frontends' bundles.
+  # Single GitHub release carrying the KDE bundle.
   # ===========================================================================
   release:
-    needs: [build-cosmic, build-kde]
+    needs: [build-kde]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -188,11 +118,11 @@ jobs:
       - name: Flatten
         run: |
           mkdir -p dist
-          # Asset names are unique across both frontends (cosmic = sentinel-*,
-          # kde = sentinel-kde-*; per-arch deb/rpm carry the arch), so a plain
-          # mv has no collisions.
+          # KDE bundle is tarball-only (sentinel-kde-<ver>-<arch>-linux.tar.gz
+          # + .sha256); per-arch names are unique, so a plain mv has no
+          # collisions.
           find artefacts -type f \
-            \( -name '*.tar.gz' -o -name '*.sha256' -o -name '*.deb' -o -name '*.rpm' \) \
+            \( -name '*.tar.gz' -o -name '*.sha256' \) \
             -exec mv -t dist/ {} +
           ls -la dist
 
@@ -207,35 +137,10 @@ jobs:
             dist/*
 
   # ===========================================================================
-  # AUR publish — one package per frontend, both sourced from this monorepo's
+  # AUR publish — the `sentinel-kde` package, sourced from this monorepo's
   # tag tarball. Gated on `release` so AUR only moves when the build + release
   # succeeded. Requires secret AUR_SSH_PRIVATE_KEY (AUR-only ed25519 key).
   # ===========================================================================
-  publish-aur-cosmic:
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-      - name: Stage PKGBUILD + install hook
-        run: |
-          mkdir -p aur-stage
-          cp packaging/arch/PKGBUILD aur-stage/PKGBUILD
-          cp packaging/arch/sentinel-cosmic.install aur-stage/
-      - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
-        with:
-          pkgname: sentinel-cosmic
-          pkgbuild: aur-stage/PKGBUILD
-          assets: aur-stage/sentinel-cosmic.install
-          commit_username: sipsip
-          commit_email: atayozcan@pm.me
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Release ${{ github.ref_name }}"
-          updpkgsums: true
-          ssh_keyscan_types: rsa,ed25519
-
   publish-aur-kde:
     needs: release
     runs-on: ubuntu-latest

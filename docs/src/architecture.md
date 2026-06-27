@@ -1,7 +1,7 @@
 # Architecture
 
 Sentinel is a shared backend (a PAM module, a polkit agent, and a
-shared crate) plus two interchangeable GUI frontends, in a single Cargo
+shared crate) plus a KDE Plasma GUI frontend, in a single Cargo
 workspace.
 
 ```
@@ -11,14 +11,13 @@ crates/
 │                           # POLKIT_PAM_SERVICE const, audit::init_syslog
 ├── pam-sentinel/           # cdylib → /usr/lib/security/pam_sentinel.so
 ├── sentinel-polkit-agent/  # bin → /usr/lib/sentinel-polkit-agent
-├── sentinel-helper/        # COSMIC / libcosmic dialog → /usr/lib/sentinel-helper
 └── sentinel-helper-kde/    # KDE Plasma / Kirigami (cxx-qt) dialog → /usr/lib/sentinel-helper-kde
 ```
 
-The two helpers are drop-in alternatives — same CLI contract, same
-`ALLOW`/`DENY`/`TIMEOUT` wire output — so the backend spawns whichever
-is installed. The backend stays out of the GUI dependency graph: a bare
-`cargo build` compiles the auth path without Qt or libcosmic.
+The backend stays out of the GUI dependency graph: a bare `cargo build`
+compiles the auth path without Qt. The helper speaks a small CLI
+contract — `ALLOW`/`DENY`/`TIMEOUT` on stdout — so the backend can spawn
+it without linking any GUI code.
 
 ## The PAM module — `pam_sentinel.so`
 
@@ -28,9 +27,9 @@ services have it wired in. For each call it picks one of:
 - **Bypass:** the polkit agent has already pre-approved this auth;
   consume it over D-Bus (`org.sentinel.Agent`). Return `PAM_SUCCESS`
   immediately.
-- **Dialog:** spawn the frontend helper (`sentinel-helper-kde` or
-  `sentinel-helper`), wait for Allow / Deny / timeout. Return
-  `PAM_SUCCESS` on Allow, `PAM_AUTH_ERR` otherwise.
+- **Dialog:** spawn the frontend helper (`sentinel-helper-kde`), wait
+  for Allow / Deny / timeout. Return `PAM_SUCCESS` on Allow,
+  `PAM_AUTH_ERR` otherwise.
 - **Headless:** no Wayland display detected. Return whatever
   `headless_action` says (default `PAM_IGNORE` → password prompt).
 - **Disabled:** `enabled = false` in config → `PAM_IGNORE`.
@@ -50,7 +49,7 @@ the calling process so the dialog shows the user-facing originator
 
 A per-user agent that registers with polkitd as the session's
 `org.freedesktop.PolicyKit1.AuthenticationAgent`. Forks
-`sentinel-helper` for the dialog, then satisfies polkit's cookie
+`sentinel-helper-kde` for the dialog, then satisfies polkit's cookie
 validation via `polkit-agent-helper-1` over its socket.
 
 ### Bypass channel (system D-Bus)
@@ -86,28 +85,30 @@ racing auth.
 wins over alternatives; first non-root unix-user is the fallback.
 See `crates/sentinel-polkit-agent/src/identity.rs`.
 
-### Why XDG autostart, not systemd-user
+### Agent autostart and the sessionid constraint
 
-The agent must inherit the kernel sessionid of the user's compositor.
-A `systemd --user` unit would run under `user@<uid>.service` (a
-DIFFERENT sessionid), and polkit's `RegisterAuthenticationAgent`
-rejects the mismatch with "Passed session and the session the caller
-is in differs". Sentinel's autostart entry sets
-`X-systemd-skip=true` so the systemd xdg-autostart-generator doesn't
-wrap it. This is how the **COSMIC** frontend deploys the agent; the
-**KDE** frontend ships a `systemd --user` unit
-(`PartOf=graphical-session.target`) instead, which Plasma's session
-management starts within the correct graphical session.
+The agent must register with polkitd from *inside* the user's login
+session: `RegisterAuthenticationAgent` checks that the caller's session
+matches the subject's, so the agent needs the compositor's
+`XDG_SESSION_ID`. A bare `systemd --user` unit under `user@<uid>.service`
+runs with a DIFFERENT sessionid and gets rejected with "Passed session
+and the session the caller is in differs". Plasma 6 runs its own polkit
+agent as a `systemd --user` service scoped to the graphical session, and
+Sentinel mirrors that: it ships `sentinel-polkit-agent.service`
+(`PartOf=graphical-session.target`), which Plasma's session management
+starts within the correct graphical session, so the agent inherits the
+session id and registers cleanly. The installer enables the unit per-user
+and masks `plasma-polkit-agent.service` so Sentinel is the session's sole
+polkit agent.
 
-## The helpers — `sentinel-helper` / `sentinel-helper-kde`
+## The helper — `sentinel-helper-kde`
 
-Two interchangeable GUI binaries that paint the dialog —
-`sentinel-helper` (COSMIC / libcosmic) and `sentinel-helper-kde` (KDE
-Plasma / Kirigami via cxx-qt). They share the CLI contract and wire
-output; the backend spawns whichever is installed. Per-spawn:
+The GUI binary that paints the dialog — `sentinel-helper-kde` (KDE
+Plasma / Kirigami via cxx-qt). The backend spawns it over a small CLI
+contract. Per-spawn:
 
-- Initializes the global Fluent translation bundle from `LANG` /
-  `LC_*` (locales embedded at compile time).
+- Initializes UI-string localization from `LANG` / `LC_*` via
+  `sentinel_shared::ui_i18n` (translations embedded at compile time).
 - Plays the freedesktop sound cue via `canberra-gtk-play` (silent
   fallback if not installed).
 - Decides layer-shell vs xdg-toplevel rendering (auto-falls-back to
@@ -116,7 +117,7 @@ output; the backend spawns whichever is installed. Per-spawn:
   and exits with the matching code.
 
 Keyboard accessibility:
-- Tab / Shift+Tab — cycle Allow / Deny (iced default).
+- Tab / Shift+Tab — cycle Allow / Deny.
 - Enter / Space — activate focused button.
 - Escape — always denies (intercepted regardless of focus).
 - Allow button is disabled for `min_display_time_ms` after the
@@ -161,11 +162,8 @@ agent → pam_sentinel:  true    (approval popped, fast-path the auth)
 
 ## Compatibility matrix
 
-See [README#Compatibility](https://github.com/atayozcan/sentinel#compatibility).
-The agent's autostart entry uses `NotShowIn=` to exclude desktops
-with built-in polkit agents (GNOME, KDE, XFCE, LXDE, Cinnamon, MATE,
-LXQt, Pantheon, Budgie) and lets every other compositor pick it up
-automatically.
+See [README#Compatibility](https://github.com/atayozcan/sentinel#compatibility)
+for the per-compositor status table.
 
 ## Threat model
 

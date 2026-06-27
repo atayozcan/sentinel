@@ -1,17 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Atay Özcan <atay@oezcan.me>
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Minimal UI-string localization for the helper frontends, keyed by a
-//! stable string key.
+//! Minimal UI-string localization for the KDE helper, keyed by a stable
+//! string key.
 //!
-//! The COSMIC helper localizes its UI via fluent bundles
-//! (`crates/sentinel-helper/locales/*.ftl`); the KDE helper (cxx-qt/QML)
-//! has no fluent runtime, so it looks strings up here via a single
-//! `translate()` invokable. Translations mirror the fluent bundles —
-//! English is the source/fallback. Add a locale by extending the `match`
-//! arms below (the keys are identical across locales).
+//! The KDE helper (cxx-qt/QML) has no gettext/fluent runtime, so it
+//! looks strings up here via a single `translate()` invokable. English
+//! is the source/fallback. Add a locale by extending the `match` arms
+//! below (the keys are identical across locales).
 //!
 //! Count placeholders use Qt's `%1` style (the KDE QML calls
-//! `.arg(seconds)` on the result), not fluent's `{$seconds}`.
+//! `.arg(seconds)` on the result).
 
 /// The UI language as a lowercase 2-letter code, resolved from the POSIX
 /// locale environment (`LC_ALL` > `LC_MESSAGES` > `LANG`). Returns `"en"`

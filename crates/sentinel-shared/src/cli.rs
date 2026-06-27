@@ -1,21 +1,20 @@
 // SPDX-FileCopyrightText: 2025 Atay Özcan <atay@oezcan.me>
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! CLI surface shared by the helper frontends so they parse the
-//! PAM/polkit invocation identically.
+//! CLI surface for the KDE helper (`sentinel-helper-kde`) so it parses
+//! the PAM/polkit invocation exactly as the backend sends it.
 //!
-//! Both `sentinel-helper` (COSMIC) and `sentinel-helper-kde` (Plasma)
-//! are spawned by `pam-sentinel` and `sentinel-polkit-agent` with the
-//! same flags and must return the same `ALLOW`/`DENY`/`TIMEOUT` verdict.
-//! Keeping the parser here means a flag added in one place can't
-//! silently diverge between frontends — the drop-in guarantee that lets
-//! one helper replace the other depends on byte-for-byte arg parity.
+//! `sentinel-helper-kde` is spawned by `pam-sentinel` and
+//! `sentinel-polkit-agent` with these flags and returns an
+//! `ALLOW`/`DENY`/`TIMEOUT` verdict. Keeping the parser in the shared
+//! crate means the spawners and the helper agree on the arg contract by
+//! construction — a flag added on one side can't silently diverge from
+//! the other.
 //!
 //! Gated behind the `cli` feature so the PAM module and polkit agent
 //! (which never parse these args) don't compile `clap`.
 //!
-//! Mirrors the user-facing flags of `crates/sentinel-helper/src/cli.rs`.
 //! The hidden `generate {completions, man}` subcommand is intentionally
-//! omitted here (packaging concern, not part of the dialog contract).
+//! omitted here (a packaging concern, not part of the dialog contract).
 
 use clap::Parser;
 

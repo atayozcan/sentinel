@@ -34,8 +34,8 @@ sudo pacman -U sentinel-kde-*.pkg.tar.zst
 ```
 
 `build()` compiles only this frontend + the backend
-(`-p sentinel-helper-kde -p sentinel-polkit-agent -p pam-sentinel`), so it
-never pulls libcosmic. There is no `check()`: `fmt`/`clippy`/tests run in CI
+(`-p sentinel-helper-kde -p sentinel-polkit-agent -p pam-sentinel`),
+keeping the build minimal. There is no `check()`: `fmt`/`clippy`/tests run in CI
 (`ci.yml`) on every push and the AUR publish is gated on a green release, so
 re-running the suite on every install would be redundant build time.
 

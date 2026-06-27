@@ -20,7 +20,7 @@ Use one of the following, in order of preference:
 
 Please include:
 
-- The Sentinel version (`sentinel-helper --version` /
+- The Sentinel version (`sentinel-helper-kde --version` /
   `pgrep -af sentinel-polkit-agent` / `pacman -Qi sentinel`)
 - Distro + kernel + compositor (`uname -a`, `echo $XDG_CURRENT_DESKTOP`)
 - Reproduction steps, ideally a minimal PAM stack snippet

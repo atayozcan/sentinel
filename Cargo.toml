@@ -6,13 +6,12 @@ members = [
     "crates/sentinel-polkit-agent",
     "crates/sentinel-broker-proto", # typed shim <-> broker IPC protocol
     "crates/sentinel-broker",       # sandboxed remember-decision daemon
-    "crates/sentinel-helper",       # COSMIC / libcosmic frontend
     "crates/sentinel-helper-kde",   # KDE Plasma / Kirigami frontend
 ]
-# Both helpers pull a heavy GUI toolchain (libcosmic / Qt + cxx-qt). Keep
-# them out of the default set so a bare `cargo build` / `cargo test` builds
-# the pure-Rust auth-path backend (PAM module + agent) without any GUI
-# deps. Build a GUI explicitly with `cargo build -p sentinel-helper[-kde]`.
+# The KDE helper pulls a heavy GUI toolchain (Qt + cxx-qt). Keep it out of
+# the default set so a bare `cargo build` / `cargo test` builds the
+# pure-Rust auth-path backend (PAM module + agent + broker) without any GUI
+# deps. Build the GUI explicitly with `cargo build -p sentinel-helper-kde`.
 default-members = [
     "crates/pam-sentinel",
     "crates/sentinel-shared",
@@ -20,7 +19,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.12.0"
+version = "0.13.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/atayozcan/sentinel"
@@ -35,7 +34,10 @@ syslog = "7"
 nix = { version = "0.31.3", features = ["fs", "process", "user", "poll", "signal", "time", "socket"] }
 anyhow = "1"
 thiserror = "2"
-postcard = { version = "1", features = ["use-std"] }
+# default-features=false drops postcard's `heapless-cas` default, which
+# otherwise pulls heapless 0.7 → atomic-polyfill (unmaintained,
+# RUSTSEC-2023-0089). We only use the std API (`to_stdvec`/`from_bytes`).
+postcard = { version = "1", default-features = false, features = ["use-std"] }
 
 [profile.release]
 lto = "fat"

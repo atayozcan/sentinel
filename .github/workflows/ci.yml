@@ -166,22 +166,9 @@ jobs:
         run: cargo install --locked cargo-audit
 
       - name: cargo audit
-        # Ignored advisories (each must have a why-comment):
-        #
-        # RUSTSEC-2024-0436 — `paste 1.0.15` is unmaintained.
-        #   Pulled in transitively via libcosmic → iced_wgpu → wgpu →
-        #   wgpu-hal → metal (the Apple Metal backend). Sentinel is
-        #   Linux-only and never executes the metal code path; wgpu
-        #   ships all backends in Cargo.lock regardless of target.
-        #   Drop this when libcosmic ships a wgpu version whose
-        #   transitive deps no longer include `paste`.
-        #
-        # RUSTSEC-2026-0173 — `proc-macro-error2` is unmaintained.
-        #   Pulled in transitively via libcosmic → i18n-embed-fl, a
-        #   build-time proc-macro for compile-time fluent localisation.
-        #   Build-time only; never ships in the auth-path binaries.
-        #   Drop when i18n-embed-fl moves off proc-macro-error2.
-        run: cargo audit --deny warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2026-0173
+        # No advisories are ignored. If one needs to be, add it here with
+        # a why-comment justifying the accepted risk.
+        run: cargo audit --deny warnings
 
   # ---------------------------------------------------------------------------
   # `cargo deny` — license / source / banned-crate enforcement.
@@ -253,60 +240,6 @@ jobs:
 
       - name: REUSE compliance check
         uses: fsfe/reuse-action@v6
-
-  # ---------------------------------------------------------------------------
-  # Package smoke. Catches `cargo deb` / `cargo generate-rpm` metadata
-  # typos at PR time rather than on tag-push (where they block a
-  # release). Reuses the workspace build via cache, so this is fast.
-  # ---------------------------------------------------------------------------
-  package:
-    name: cargo deb + generate-rpm (smoke)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libpam0g-dev \
-            libxkbcommon-dev \
-            libwayland-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            pkg-config \
-            mold
-
-      - name: Install rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-deb and cargo-generate-rpm
-        run: |
-          cargo install --locked cargo-deb
-          cargo install --locked cargo-generate-rpm
-
-      - name: Build release artefacts
-        run: cargo build --release --workspace --exclude sentinel-helper-kde --locked
-
-      - name: Generate completions + man pages
-        # cargo-deb / generate-rpm reference these as assets.
-        run: |
-          mkdir -p target/release/share
-          for bin in sentinel-helper sentinel-polkit-agent; do
-            target/release/$bin completions bash > target/release/share/$bin.bash
-            target/release/$bin completions fish > target/release/share/$bin.fish
-            target/release/$bin completions zsh  > target/release/share/_$bin
-            target/release/$bin man              > target/release/share/$bin.1
-          done
-
-      - name: cargo deb (no rebuild)
-        run: cargo deb --no-build -p sentinel-helper
-
-      - name: cargo generate-rpm
-        run: cargo generate-rpm -p crates/sentinel-helper
 
   # ---------------------------------------------------------------------------
   # KDE / Plasma helper (sentinel-helper-kde). Needs Qt6 + KF6 + cxx-qt's

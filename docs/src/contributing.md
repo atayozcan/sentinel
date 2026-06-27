@@ -31,9 +31,9 @@ lists the gate. Most-important items:
   `every_bundle_has_matching_placeholders` tests catch most issues
   but not all rendering quirks.
 - **Install / uninstall** — please test the rollback path too
-  (`pkexec ./uninstall.sh`).
+  (`pkexec ./packaging-kde/uninstall.sh`).
 - **i18n: adding a new locale** — see
-  `crates/sentinel-helper/src/i18n.rs` doc comment for the four
+  `crates/sentinel-shared/src/ui_i18n.rs` doc comment for the
   steps; the test suite catches missing keys + placeholder drift.
 
 ## Architecture references
