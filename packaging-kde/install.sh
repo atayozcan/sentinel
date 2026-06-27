@@ -142,6 +142,38 @@ find_pam_base() {
     return 1
 }
 
+# Find an admin-writable sudoers drop-in dir that the ACTIVE sudoers config
+# actually @includedir's — so `Defaults timestamp_timeout=0` we drop there is
+# really read. Handles every target layout (and sudo-rs):
+#   Debian/Ubuntu/Fedora/Arch: /etc/sudoers     @includedir /etc/sudoers.d
+#   openSUSE (adminconf build): /usr/etc/sudoers @includedir /etc/sudoers.d
+#                                                (+ /usr/etc/sudoers.d)
+#   sudo-rs:                    /etc/sudoers-rs or /etc/sudoers
+# We only ever write under /etc (prefer /etc/sudoers.d) — never a /usr/etc
+# vendor dir (clobbered on update) — and never edit a main file in place.
+# Echoes the dir and returns 0, or returns 1 (e.g. NixOS's generated sudoers
+# with no writable include) so the caller skips with a warning. Both the old
+# `@includedir` and legacy `#includedir` directive spellings are accepted.
+find_sudoers_dropin() {
+    local m d
+    local -a incdirs=()
+    for m in /etc/sudoers-rs /etc/sudoers /usr/etc/sudoers; do
+        [[ -r "$m" ]] || continue
+        while IFS= read -r d; do incdirs+=("$d"); done < <(
+            grep -hE '^[[:space:]]*[#@]includedir[[:space:]]' "$m" 2>/dev/null \
+                | sed -E 's/^[[:space:]]*[#@]includedir[[:space:]]+//; s/[[:space:]]+$//; s/^"(.*)"$/\1/'
+        )
+    done
+    (( ${#incdirs[@]} )) || return 1      # no includedir anywhere (e.g. NixOS)
+    for d in "${incdirs[@]}"; do          # prefer the standard admin drop-in
+        [[ "$d" == /etc/sudoers.d ]] && { printf '%s\n' "$d"; return 0; }
+    done
+    for d in "${incdirs[@]}"; do          # else any included dir under /etc
+        [[ "$d" == /etc/* ]] && { printf '%s\n' "$d"; return 0; }
+    done
+    return 1
+}
+
 # Wire pam_sentinel into a PAM service by COPYING its existing stack and
 # inserting `auth sufficient pam_sentinel.so` just before the first
 # `auth … include/substack` line. This:
@@ -329,23 +361,30 @@ if [[ $INSTALL_SUDO -eq 1 ]]; then
     # Make Sentinel the SINGLE source of sudo "remember". sudo's own
     # credential cache (timestamp_timeout, ~5 min) lets a back-to-back
     # `sudo` skip the PAM stack entirely — so Sentinel never sees it and our
-    # per-command window is bypassed by sudo's blanket session cache. Disable
-    # it so every sudo runs PAM; Sentinel's broker-backed, per-command
-    # remember is then the only layer. Reversible (removed on uninstall).
-    # Skipped — with a warning, never a hard fail — if sudoers doesn't
-    # includedir sudoers.d, visudo is missing, or the snippet won't validate.
-    if grep -qE '^[[:space:]]*[#@]includedir[[:space:]]+/etc/sudoers\.d' "$SYSCONFDIR/sudoers" 2>/dev/null; then
+    # per-command window is bypassed by sudo's blanket session cache. Drop
+    # `Defaults timestamp_timeout=0` so every sudo runs PAM; Sentinel's
+    # broker-backed, per-command remember is then the only layer. Honored by
+    # classic sudo AND sudo-rs. Placed in whatever drop-in dir the active
+    # sudoers actually includes (find_sudoers_dropin handles /etc/sudoers,
+    # openSUSE's /usr/etc/sudoers, and sudo-rs). Best-effort: warns — never a
+    # hard fail — if visudo is missing, no safe drop-in exists (e.g. NixOS),
+    # or the snippet won't validate. A broken sudoers can lock out root, so we
+    # validate before writing and never touch a main file in place.
+    if ! command -v visudo >/dev/null 2>&1; then
+        warn "visudo not found — skipped sudo timestamp override (set 'Defaults timestamp_timeout=0' yourself)."
+    elif sudoers_dropin="$(find_sudoers_dropin)"; then
         ts_tmp="$(mktemp)"
         printf '# Installed by Sentinel — do not edit.\n# Disable sudo credential caching so every sudo runs the PAM stack and\n# Sentinel'\''s per-command remember is the only cache. Remove to restore\n# sudo'\''s default ~5-minute timestamp.\nDefaults timestamp_timeout=0\n' > "$ts_tmp"
-        if command -v visudo >/dev/null 2>&1 && visudo -cf "$ts_tmp" >/dev/null 2>&1; then
-            install_file 440 "$ts_tmp" "$SYSCONFDIR/sudoers.d/sentinel-timestamp"
-            step "Disabled sudo credential caching (Sentinel is now the only sudo remember)."
+        if visudo -cf "$ts_tmp" >/dev/null 2>&1; then
+            install_file 440 "$ts_tmp" "$sudoers_dropin/sentinel-timestamp"
+            step "Disabled sudo credential caching via $sudoers_dropin/sentinel-timestamp (Sentinel is now the only sudo remember)."
         else
             warn "sudoers snippet failed visudo validation — left sudo caching as-is."
         fi
         rm -f "$ts_tmp"
     else
-        warn "/etc/sudoers does not includedir /etc/sudoers.d — skipped sudo timestamp override."
+        warn "No sudoers.d includedir found under /etc — skipped sudo timestamp override."
+        warn "  Add 'Defaults timestamp_timeout=0' to your sudoers so Sentinel is the only sudo cache."
     fi
 fi
 
@@ -392,10 +431,11 @@ if [[ $INSTALL_SUDO -eq 1 ]]; then
     for svc in sudo sudo-i su; do
         [[ -f "$SYSCONFDIR/pam.d/$svc" ]] && verify "$SYSCONFDIR/pam.d/$svc" 644 regular
     done
-    # The sudo timestamp override is best-effort (skipped if sudoers lacks
-    # includedir); verify it only if it was actually installed.
-    [[ -f "$SYSCONFDIR/sudoers.d/sentinel-timestamp" ]] \
-        && verify "$SYSCONFDIR/sudoers.d/sentinel-timestamp" 440 regular
+    # The sudo timestamp override is best-effort (skipped if no safe drop-in);
+    # verify it only at the dir we actually chose, and only if installed.
+    if [[ -n "${sudoers_dropin:-}" && -f "$sudoers_dropin/sentinel-timestamp" ]]; then
+        verify "$sudoers_dropin/sentinel-timestamp" 440 regular
+    fi
 fi
 
 systemctl daemon-reload 2>/dev/null || true

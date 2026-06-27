@@ -98,12 +98,18 @@ following [Semantic Versioning](https://semver.org/).
 - **Installer disables sudo's own credential cache.** `sudo`'s
   `timestamp_timeout` (~5 min) let a back-to-back `sudo` skip the PAM stack
   entirely, so Sentinel never saw it and its per-command remember was
-  bypassed by sudo's *blanket* session cache. The KDE installer now drops
-  `/etc/sudoers.d/sentinel-timestamp` (`Defaults timestamp_timeout=0`,
-  validated with `visudo` before install, removed on uninstall) so every
-  `sudo` runs PAM and Sentinel's per-command window is the only cache.
-  Skipped with a warning (never a hard fail) if sudoers lacks an
-  `includedir`; `--no-sudo` opts out of terminal wiring and this override.
+  bypassed by sudo's *blanket* session cache. The KDE installer now drops a
+  `sentinel-timestamp` snippet (`Defaults timestamp_timeout=0`) so every
+  `sudo` runs PAM and Sentinel's per-command window is the only cache —
+  honored by classic sudo **and** sudo-rs. `find_sudoers_dropin` detects the
+  active sudoers across distro layouts — `/etc/sudoers`
+  (Debian/Ubuntu/Fedora/Arch), openSUSE's `/usr/etc/sudoers`, and sudo-rs's
+  `/etc/sudoers-rs` — and writes only into a drop-in dir that config
+  actually `@includedir`s (preferring `/etc/sudoers.d`, never a `/usr/etc`
+  vendor dir). `visudo`-validated before install, recorded for uninstall.
+  Skipped with a warning (never a hard fail) when there's no safe drop-in
+  (e.g. NixOS's generated sudoers); `--no-sudo` opts out of terminal wiring
+  and this override.
 
 ## [0.11.1] — 2026-06-20
 
