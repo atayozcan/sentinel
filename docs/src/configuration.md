@@ -19,15 +19,18 @@ own `timeout` to zero.
 | `show_process_info` | bool | `true` | Display the requesting process's exe/cmdline in the dialog. |
 | `log_attempts` | bool | `true` | Log every allow/deny/timeout to syslog (`auth.info`). |
 | `min_display_time_ms` | uint | `500` | Disable the Allow button for this many ms after the dialog appears, blocking instant scripted clicks. |
-| `remember_seconds` | uint | `0` | "Remember" window. When non-zero, the dialog shows a **"Remember for N min" checkbox**; tick it and Allow to let repeat requests from the **same login session** for the **same service + binary** skip the dialog for this many seconds. `0` (default) hides the checkbox; hard-capped at `900`. See [below](#remember-window). |
+| `remember_seconds` | uint | `300` | "Remember" window for the **polkit/GUI path**. The dialog shows a **"Remember for N min" checkbox** by default; tick it and Allow to let repeat requests from the **same login session** for the **same action + binary** skip the dialog for this many seconds. `0` hides the checkbox (feature off on the GUI path); hard-capped at `900`. **Terminal `sudo`/`su` are off by default** regardless of this value — opt in per-service via `[services.<name>].remember_seconds`. See [below](#remember-window). |
 
 <a id="remember-window"></a>
-**The remember window** is a `sudo`-timestamp analogue, opt-in **per
-request** via a dialog checkbox (not a silent global). A grant is bound
-to your `loginuid` **and** kernel audit `sessionid`, so it can't be
-replayed in another session or by another user, and is scoped to the
-exact `(service, exe)` it was granted for — never a blanket allow. It is
-enforced by two trust-appropriate backends:
+**The remember window** is a `sudo`-timestamp analogue. The opt-in
+checkbox is **shown by default on the polkit/GUI path** (set
+`remember_seconds = 0` to hide it); ticking it is still opt-in **per
+request** (the box defaults unchecked, so nothing is auto-allowed unless
+you tick it on that prompt). A grant is bound to your `loginuid` **and**
+kernel audit `sessionid`, so it can't be replayed in another session or
+by another user, and is scoped to the exact `(action, exe)` it was
+granted for — never a blanket allow. It is enforced by two
+trust-appropriate backends:
 
 - **sudo / su** (PAM module, root): a record in `/run/sentinel/ts`, a
   root-owned `0700` tmpfs dir. Freshness uses `CLOCK_BOOTTIME` stored in
@@ -35,6 +38,29 @@ enforced by two trust-appropriate backends:
   wiped on reboot, so no grant survives a reboot.
 - **polkit / GUI** (agent, per-user): an in-memory cache that evaporates
   on logout (the agent restarts with the session).
+
+**GUI on, terminal off by default.** Because the two paths have very
+different blast radii, the default is split:
+
+- The **polkit/GUI** path inherits `[general].remember_seconds` (default
+  `300`), so the checkbox is shown there by default.
+- The **terminal** `sudo`/`su`/`sudo-i` paths default to **`0` (off)**
+  regardless of `[general]`. Enable one explicitly with, e.g.,
+  `[services.sudo]\nremember_seconds = 300`. Disable the GUI path with
+  `[general].remember_seconds = 0` or `[services."polkit-1"].remember_seconds = 0`.
+
+The generic pkexec action (`org.freedesktop.policykit.exec`, "run any
+command as root") is **never** remembered: its grant key omits the
+command line, so one tick would otherwise blanket unrelated root
+commands.
+
+> ⚠️ **Terminal caveat.** A `sudo`/`su` grant is keyed by the elevated
+> program *name*, not its full arguments — a grant for `sudo pacman -Syu`
+> also covers `sudo pacman -U <file>`, and is honored by every process
+> sharing your audit session for the window. Under the shipped
+> `auth sufficient` wiring a remembered grant is **passwordless** for its
+> duration (it short-circuits the stack before `pam_unix`). Enable the
+> terminal window only if you accept that trade-off.
 
 A request with no audit session is never remembered. `sudo`'s own
 timestamp still covers terminal `sudo` independently of this setting.
@@ -55,9 +81,13 @@ timestamp still covers terminal `sudo` independently of this setting.
 
 ### `[services.<name>]`
 
-Per-PAM-service overrides. Any `[general]` key can be overridden under
-`[services.sudo]`, `[services."polkit-1"]`, `[services.su]`, etc.
-Omitted keys inherit from `[general]`.
+Per-PAM-service overrides. The overridable keys are `enabled`,
+`timeout`, `randomize`, and `remember_seconds`. Unknown keys are a
+**parse error** (a typo fails loudly rather than being silently
+dropped). Omitted keys inherit from `[general]` — **except
+`remember_seconds`**, which inherits `[general].remember_seconds` only
+for `polkit-1` and defaults to `0` (off) for terminal services; see the
+[remember window](#remember-window).
 
 ```toml
 [services.polkit-1]
@@ -65,6 +95,9 @@ timeout = 60          # more lenient for GUI auth
 
 [services.su]
 enabled = false       # never confirm `su`, fall through to password
+
+[services.sudo]
+remember_seconds = 300  # opt sudo into a 5-min window (off by default)
 ```
 
 ### `[policy]`
@@ -140,7 +173,7 @@ timeout = 30
 randomize_buttons = true
 headless_action = "password"
 min_display_time_ms = 500
-remember_seconds = 0          # 0 = ask every time; e.g. 300 = remember for 5 min
+remember_seconds = 300        # GUI checkbox window (default); 0 = hide/off
 
 [appearance]
 title = "Authentication Required"
@@ -162,6 +195,7 @@ on_timeout = false
 
 [services.sudo]
 timeout = 30
+# remember_seconds = 300      # uncomment to opt sudo in (off by default)
 
 [services."polkit-1"]
 timeout = 60

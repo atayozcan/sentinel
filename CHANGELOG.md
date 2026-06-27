@@ -8,6 +8,25 @@ The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), with version numbers
 following [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- **Remember checkbox shown by default (polkit/GUI).** `[general].remember_seconds`
+  now defaults to `300` (was `0`), so the polkit auth dialog shows the
+  opt-in "Remember" checkbox on every prompt. The box still defaults
+  unchecked — nothing is auto-allowed unless you tick it per prompt. Set
+  `[general].remember_seconds = 0` to hide it / disable. (#22)
+- **Terminal `sudo`/`su` remember stays off by default.** The remember
+  window is now a per-service knob: terminal paths default to `0`
+  regardless of `[general]` and must opt in via the new
+  `[services.<name>].remember_seconds` override. This keeps the
+  root-owned terminal timestamp store off by default while the in-memory
+  GUI cache defaults on. Unknown `[services.*]` keys are now a parse
+  error (`deny_unknown_fields`) so a typo'd security knob fails loudly.
+- **Generic pkexec action excluded from remember.**
+  `org.freedesktop.policykit.exec` ("run any command as root") is never
+  remembered — its grant key omits the command line, so a single tick
+  must not blanket unrelated root commands.
+
 ## [0.11.1] — 2026-06-20
 
 Packaging hotfix for 0.11.0 — no runtime, config, or auth-path change.

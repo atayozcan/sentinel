@@ -47,6 +47,11 @@ pub struct ForAction<'a> {
     /// title/timeout/randomize and provides the message/secondary
     /// templates.
     pub cfg: &'a ServiceConfig,
+    /// Effective remember window for *this* request. Comes from the
+    /// caller, not `cfg.remember_seconds`, because the pkexec carve-out
+    /// (see `session::remember_eligible`) collapses it to 0 for the
+    /// generic exec action so the checkbox is never offered there.
+    pub remember_secs: u32,
     /// Username being authenticated. Substituted as `%u` in templates.
     pub username: &'a str,
     pub process_exe: Option<&'a str>,
@@ -108,7 +113,7 @@ impl Request {
             min_time: args.cfg.min_display_time_ms as u64,
             randomize: args.cfg.randomize_buttons,
             sound_name: args.cfg.sound_name.clone(),
-            remember_secs: args.cfg.remember_seconds,
+            remember_secs: args.remember_secs,
             process_exe: args.process_exe.map(str::to_string),
             process_cmdline: args.process_cmdline.map(str::to_string),
             process_pid: args.process_pid,

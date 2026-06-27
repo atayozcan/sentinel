@@ -31,6 +31,23 @@ pub struct AuthInputs<'a> {
     pub requesting_user: Option<&'a str>,
 }
 
+/// The generic polkit action id for "run an arbitrary program as root".
+const GENERIC_EXEC_ACTION: &str = "org.freedesktop.policykit.exec";
+
+/// Whether a polkit action may participate in the "remember" window.
+///
+/// The remember cache keys grants on `(action_id, exe)` only — it does
+/// **not** include the command line ([`crate::remember`]). For the
+/// generic [`GENERIC_EXEC_ACTION`] (`pkexec` — run *any* command as
+/// root) that would let a single ticked grant auto-allow *any* later
+/// root command from the same caller within the window. So pkexec is
+/// excluded from remember entirely: no checkbox, no recording, no
+/// auto-allow. Specific actions (e.g. a package-install action) stay
+/// eligible — their action id already bounds what the grant covers.
+fn remember_eligible(action_id: &str) -> bool {
+    action_id != GENERIC_EXEC_ACTION
+}
+
 pub async fn run(
     queue: ApprovalQueue,
     remember: RememberCache,
@@ -103,16 +120,23 @@ pub async fn run(
         PolicyDecision::Ask => {}
     }
 
+    // Effective remember window for this request. The generic pkexec
+    // action is carved out (see `remember_eligible`) — for it this
+    // collapses to 0, which transitively disables the checkbox (passed
+    // to the helper below), the auto-allow short-circuit, and the
+    // recording on Allow.
+    let remember_secs = if remember_eligible(inputs.action_id) {
+        inputs.cfg.remember_seconds
+    } else {
+        0
+    };
+
     // In-memory "remember" cache (the polkit-path complement to the root
     // timestamp store, which the PAM module owns for sudo/su). A fresh
     // grant for this (action, exe) auto-allows without a dialog.
-    if inputs.cfg.remember_seconds > 0
+    if remember_secs > 0
         && remember
-            .is_fresh(
-                inputs.action_id,
-                inputs.process_exe,
-                inputs.cfg.remember_seconds,
-            )
+            .is_fresh(inputs.action_id, inputs.process_exe, remember_secs)
             .await
     {
         let process_name = inputs
@@ -143,6 +167,7 @@ pub async fn run(
     let req = helper_ui::Request::for_action(helper_ui::ForAction {
         action_id: inputs.action_id,
         cfg: inputs.cfg,
+        remember_secs,
         username: inputs.username,
         process_exe: inputs.process_exe,
         process_cmdline: inputs.process_cmdline,
@@ -219,7 +244,7 @@ pub async fn run(
     // Record this Allow so repeat (action, exe) requests within the
     // window skip the dialog — but only if the user ticked the
     // "remember" checkbox (verdict.remember), not on every allow.
-    if verdict.remember && inputs.cfg.remember_seconds > 0 {
+    if verdict.remember && remember_secs > 0 {
         remember
             .remember(inputs.action_id, inputs.process_exe)
             .await;
@@ -244,4 +269,30 @@ pub async fn run(
         );
     }
     Ok(success)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generic_exec_action_is_not_remember_eligible() {
+        // pkexec / "run any command as root" must never be remembered:
+        // the (action_id, exe) key is command-blind, so one grant would
+        // blanket arbitrary later root commands from the same caller.
+        assert!(!remember_eligible(GENERIC_EXEC_ACTION));
+        assert!(!remember_eligible("org.freedesktop.policykit.exec"));
+    }
+
+    #[test]
+    fn specific_actions_are_remember_eligible() {
+        // Specific actions are bounded by their own id, so remembering
+        // them is appropriately scoped.
+        assert!(remember_eligible(
+            "org.freedesktop.packagekit.package-install"
+        ));
+        assert!(remember_eligible(
+            "org.freedesktop.systemd1.manage-units"
+        ));
+    }
 }

@@ -243,12 +243,19 @@ pub struct General {
     pub log_attempts: bool,
     #[serde(default = "default_min_display_time")]
     pub min_display_time_ms: u32,
-    /// "Remember" window in seconds: after an Allow, repeat requests from
-    /// the same user+session for the same service+binary auto-allow
-    /// without a dialog for this long. `0` (default) disables it. Hard-
-    /// capped at 900s regardless of value. See the timestamp store in
-    /// `pam-sentinel` for the security model.
-    #[serde(default)]
+    /// "Remember" window in seconds for the **polkit/GUI** auth path:
+    /// after an Allow with the checkbox ticked, repeat requests from the
+    /// same session for the same action+binary auto-allow without a
+    /// dialog for this long. Defaults to `300` (5 min), so the dialog
+    /// shows the opt-in checkbox by default; `0` hides it / disables the
+    /// feature on the GUI path. Hard-capped at 900s regardless of value.
+    ///
+    /// This is the base value for the `polkit-1` service only. The
+    /// terminal `sudo`/`su` paths default to **off** regardless of this
+    /// value and must be opted in per-service via
+    /// `[services.<name>].remember_seconds` — see [`Document::for_service`]
+    /// and the timestamp store in `pam-sentinel` for the security model.
+    #[serde(default = "default_remember_seconds")]
     pub remember_seconds: u32,
 }
 
@@ -262,7 +269,7 @@ impl Default for General {
             show_process_info: true,
             log_attempts: true,
             min_display_time_ms: default_min_display_time(),
-            remember_seconds: 0,
+            remember_seconds: default_remember_seconds(),
         }
     }
 }
@@ -313,12 +320,27 @@ impl Default for Appearance {
 }
 
 /// Per-service override block (`[services.<name>]`). Any `None` field
-/// inherits from `[general]`.
+/// inherits its base value (see [`Document::for_service`]).
+///
+/// `deny_unknown_fields` makes a typo'd key (e.g. `ramdomize`) a loud
+/// parse error — logged, fail-soft to defaults — rather than a silently
+/// dropped override. This matters most for `remember_seconds`, a
+/// security knob: a silently-ignored `remember_seconds = 0` would be a
+/// footgun.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServiceOverride {
     pub enabled: Option<bool>,
     pub timeout: Option<u32>,
     pub randomize: Option<bool>,
+    /// Per-service "remember" window in seconds. `None` (the default)
+    /// inherits the base value from [`Document::for_service`]: the
+    /// `polkit-1` GUI path inherits `[general].remember_seconds`, while
+    /// terminal paths (`sudo`/`su`/…) and unknown services default to
+    /// `0` (off). Set a non-zero value to opt a terminal service into
+    /// the remember window, or `0` to force a service off. Hard-capped
+    /// at 900s downstream.
+    pub remember_seconds: Option<u32>,
 }
 
 /// What a [`Policy`] match resolves to for a given request.
@@ -423,7 +445,10 @@ pub struct ServiceConfig {
     /// Post a desktop notification when this request times out
     /// (`[notifications].on_timeout`).
     pub notify_on_timeout: bool,
-    /// `[general].remember_seconds` — auto-allow window (0 = off).
+    /// Effective auto-allow "remember" window in seconds (0 = off).
+    /// Resolved by [`Document::for_service`]: the `polkit-1` GUI path
+    /// inherits `[general].remember_seconds`; terminal paths default to
+    /// `0` unless opted in via `[services.<name>].remember_seconds`.
     pub remember_seconds: u32,
 }
 
@@ -458,7 +483,19 @@ impl Document {
             policy: self.policy.clone(),
             notify_on_deny: self.notifications.on_deny,
             notify_on_timeout: self.notifications.on_timeout,
-            remember_seconds: self.general.remember_seconds,
+            // The remember window is GUI-path-only by default: the
+            // `polkit-1` service inherits `[general].remember_seconds`
+            // (default 300), while terminal services (sudo/su/…) and
+            // unknown services default to 0 (off). This keeps the
+            // dangerous root-owned terminal timestamp store off by
+            // default while the in-memory GUI cache defaults on; terminal
+            // services opt in explicitly via the per-service override
+            // below. See the security review for issue #22.
+            remember_seconds: if service == POLKIT_PAM_SERVICE {
+                self.general.remember_seconds
+            } else {
+                0
+            },
         };
         if let Some(over) = self.services.get(service) {
             if let Some(v) = over.enabled {
@@ -469,6 +506,9 @@ impl Document {
             }
             if let Some(v) = over.randomize {
                 cfg.randomize_buttons = v;
+            }
+            if let Some(v) = over.remember_seconds {
+                cfg.remember_seconds = v;
             }
         }
         cfg
@@ -974,6 +1014,16 @@ fn default_timeout() -> u32 {
 fn default_min_display_time() -> u32 {
     500
 }
+/// Default "remember" window for the polkit/GUI path (5 min, `sudo`
+/// `timestamp_timeout` parity, well under the 900s hard cap). Referenced
+/// by both the `#[serde(default = ...)]` on [`General::remember_seconds`]
+/// and [`General::default`] so the two default paths cannot diverge — a
+/// bare `#[serde(default)]` would resolve to `u32::default() == 0`
+/// whenever `[general]` is present but the key is absent (the shipped
+/// state), silently defeating the default-on behaviour.
+fn default_remember_seconds() -> u32 {
+    300
+}
 fn default_title() -> String {
     DEFAULT_TITLE.into()
 }
@@ -1137,6 +1187,7 @@ mod tests {
                 enabled: Some(false),
                 timeout: Some(99),
                 randomize: Some(false),
+                remember_seconds: None,
             },
         );
         let doc = doc_with_services(services);
@@ -1155,6 +1206,7 @@ mod tests {
                 enabled: Some(false),
                 timeout: None,
                 randomize: None,
+                remember_seconds: None,
             },
         );
         let doc = doc_with_services(services);
@@ -1173,6 +1225,7 @@ mod tests {
                 enabled: Some(false),
                 timeout: Some(1),
                 randomize: Some(false),
+                remember_seconds: None,
             },
         );
         let doc = doc_with_services(services);
@@ -1180,6 +1233,86 @@ mod tests {
         assert!(polkit_cfg.enabled);
         assert_eq!(polkit_cfg.timeout, 30);
         assert!(polkit_cfg.randomize_buttons);
+    }
+
+    // ---- remember_seconds default + key split (issue #22) ----------------
+
+    #[test]
+    fn remember_default_is_300_on_gui_path() {
+        let doc = Document::defaults();
+        assert_eq!(doc.general.remember_seconds, 300);
+        assert_eq!(doc.for_service(POLKIT_PAM_SERVICE).remember_seconds, 300);
+    }
+
+    #[test]
+    fn remember_terminal_paths_default_off() {
+        // The point of the key split: GUI on, terminal off by default,
+        // even though [general].remember_seconds defaults to 300.
+        let doc = Document::defaults();
+        assert_eq!(doc.for_service("sudo").remember_seconds, 0);
+        assert_eq!(doc.for_service("su").remember_seconds, 0);
+        assert_eq!(doc.for_service("sudo-i").remember_seconds, 0);
+        assert_eq!(doc.for_service("anything").remember_seconds, 0);
+    }
+
+    #[test]
+    fn remember_terminal_opt_in_via_service_override() {
+        let mut services = HashMap::new();
+        services.insert(
+            "sudo".to_string(),
+            ServiceOverride {
+                remember_seconds: Some(60),
+                ..Default::default()
+            },
+        );
+        let doc = doc_with_services(services);
+        assert_eq!(doc.for_service("sudo").remember_seconds, 60);
+        // a different terminal service stays off
+        assert_eq!(doc.for_service("su").remember_seconds, 0);
+    }
+
+    #[test]
+    fn remember_gui_off_switch_via_service_override() {
+        let mut services = HashMap::new();
+        services.insert(
+            POLKIT_PAM_SERVICE.to_string(),
+            ServiceOverride {
+                remember_seconds: Some(0),
+                ..Default::default()
+            },
+        );
+        let doc = doc_with_services(services);
+        assert_eq!(doc.for_service(POLKIT_PAM_SERVICE).remember_seconds, 0);
+    }
+
+    #[test]
+    fn remember_serde_default_applies_when_key_absent() {
+        // Guards the bare-#[serde(default)] trap: [general] present but
+        // the key absent must yield 300 (NOT u32::default() == 0). This
+        // is the shipped state (config ships the key commented out).
+        let doc: Document = toml::from_str("[general]\ntimeout = 30\n").expect("parse");
+        assert_eq!(doc.general.remember_seconds, 300);
+        assert_eq!(doc.for_service(POLKIT_PAM_SERVICE).remember_seconds, 300);
+        // terminal still off despite the GUI default
+        assert_eq!(doc.for_service("sudo").remember_seconds, 0);
+    }
+
+    #[test]
+    fn remember_explicit_zero_is_preserved() {
+        // Escape hatch: explicit 0 stays 0 (feature off on the GUI path).
+        let doc: Document =
+            toml::from_str("[general]\nremember_seconds = 0\n").expect("parse");
+        assert_eq!(doc.general.remember_seconds, 0);
+        assert_eq!(doc.for_service(POLKIT_PAM_SERVICE).remember_seconds, 0);
+    }
+
+    #[test]
+    fn service_override_unknown_field_is_a_parse_error() {
+        // deny_unknown_fields: a typo'd per-service key fails loudly
+        // rather than being silently dropped.
+        let r: Result<Document, _> =
+            toml::from_str("[services.sudo]\nramdomize = true\n");
+        assert!(r.is_err(), "typo'd per-service key must be a parse error");
     }
 
     // ---- TOML round-trip -------------------------------------------------
