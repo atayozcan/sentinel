@@ -50,6 +50,13 @@ following [Semantic Versioning](https://semver.org/).
   `format_message` (`%`-token substitution). A `fuzz` CI workflow
   smoke-fuzzes each target 60 s per push (5 min weekly). No crashes found
   in initial runs (~2.2M/660K/980K execs).
+- **Privilege-separation broker — typed IPC protocol (foundation).** New
+  `sentinel-broker-proto` crate: the `#![forbid(unsafe_code)]` wire
+  contract for a future thin PAM shim → sandboxed root broker
+  (`pam_sss`/OpenSSH-monitor model). Compact `postcard` messages with a
+  length-prefixed, `MAX_FRAME_LEN`-bounded codec (no OOM on a hostile
+  length), fail-closed semantics, and a `broker_proto` fuzz target. The
+  broker daemon and the shim rewire are the next increments.
 
 ## [0.11.1] — 2026-06-20
 

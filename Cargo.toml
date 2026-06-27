@@ -4,6 +4,7 @@ members = [
     "crates/pam-sentinel",
     "crates/sentinel-shared",
     "crates/sentinel-polkit-agent",
+    "crates/sentinel-broker-proto", # typed shim <-> broker IPC protocol
     "crates/sentinel-helper",       # COSMIC / libcosmic frontend
     "crates/sentinel-helper-kde",   # KDE Plasma / Kirigami frontend
 ]
@@ -33,6 +34,7 @@ syslog = "7"
 nix = { version = "0.31.3", features = ["fs", "process", "user", "poll", "signal", "time"] }
 anyhow = "1"
 thiserror = "2"
+postcard = { version = "1", features = ["use-std"] }
 
 [profile.release]
 lto = "fat"

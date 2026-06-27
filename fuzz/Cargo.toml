@@ -16,6 +16,9 @@ arbitrary = { version = "1", features = ["derive"] }
 [dependencies.sentinel-shared]
 path = "../crates/sentinel-shared"
 
+[dependencies.sentinel-broker-proto]
+path = "../crates/sentinel-broker-proto"
+
 # Own workspace so the fuzz crate (and its libfuzzer-sys / nightly-only
 # build) is excluded from the parent workspace's `cargo build`/`test`.
 [workspace]
@@ -37,6 +40,13 @@ bench = false
 [[bin]]
 name = "format_message"
 path = "fuzz_targets/format_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "broker_proto"
+path = "fuzz_targets/broker_proto.rs"
 test = false
 doc = false
 bench = false
