@@ -28,7 +28,7 @@ rand = "0.10"
 sentinel-shared = { path = "../sentinel-shared", features = ["cli"] }
 
 [build-dependencies]
-cxx-qt-build = "0.8"
+cxx-qt-build = "0.9"
 
 # ---------------------------------------------------------------------------
 # Distro packages (.deb / .rpm) — BINARY, via the install.sh wrapper.
