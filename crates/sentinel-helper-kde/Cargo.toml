@@ -31,32 +31,46 @@ sentinel-shared = { path = "../sentinel-shared", features = ["cli"] }
 cxx-qt-build = "0.8"
 
 # ---------------------------------------------------------------------------
-# openSUSE / Fedora RPM via `cargo generate-rpm`.
-# Prereq: cargo build --release -p sentinel-helper-kde
-# Then:   cargo generate-rpm -p crates/sentinel-helper-kde
+# Distro packages (.deb / .rpm) — BINARY, via the install.sh wrapper.
+# Both ship the prebuilt bundle tarball (assembled by
+# scripts/release-local.sh, which stages it at
+# target/release/sentinel-kde-bundle.tar.gz before invoking the tools) and
+# run the tested, distro-adaptive install.sh in the post-install scriptlet,
+# so pam_sentinel is wired against THIS distro's polkit-1 PAM stack rather
+# than a hardcoded one. --no-sudo keeps it polkit-only, like the AUR pkg.
+#
+# NOTE: runtime dep NAMES are best-effort per distro (Qt6/KF6 packages are
+# named differently on Debian vs Fedora vs openSUSE) and may need tuning;
+# they gate the helper at RUNTIME, not the install (which only deploys files
+# + wires PAM). Build:  scripts/release-local.sh  (handles staging + both).
 # ---------------------------------------------------------------------------
+[package.metadata.deb]
+name = "sentinel-kde"
+maintainer = "Atay Özcan <atay@oezcan.me>"
+section = "admin"
+priority = "optional"
+depends = "libpam0g, polkitd | policykit-1"
+recommends = "qt6-qpa-plugins, qml6-module-org-kde-kirigami, libkf6kirigami-bin"
+extended-description = "UAC-style confirmation dialog for privilege escalation on KDE Plasma (Wayland). Ships prebuilt binaries; the post-install step wires pam_sentinel into the distro's polkit-1 PAM stack and sets up the broker."
+maintainer-scripts = "../../packaging-kde/packaging/deb/"
+assets = [
+    ["target/release/sentinel-kde-bundle.tar.gz", "usr/lib/sentinel-kde/bundle.tar.gz", "644"],
+]
+
 [package.metadata.generate-rpm]
-name = "sentinel-helper-kde"
+name = "sentinel-kde"
 summary = "KDE Plasma-native UAC-style confirmation dialog for Sentinel"
 license = "GPL-3.0-or-later"
 url = "https://github.com/atayozcan/sentinel"
-# QML is embedded in the binary (qrc), so the binary is the only asset.
+post_install_script = "../../packaging-kde/packaging/rpm/post.sh"
+pre_uninstall_script = "../../packaging-kde/packaging/rpm/preun.sh"
 assets = [
-    { source = "target/release/sentinel-helper-kde", dest = "/usr/bin/sentinel-helper-kde", mode = "755" },
+    { source = "target/release/sentinel-kde-bundle.tar.gz", dest = "/usr/lib/sentinel-kde/bundle.tar.gz", mode = "644" },
 ]
-# dlopen / QML-loaded runtime deps; linked libQt6* libraries are detected
-# automatically from the binary.
 [package.metadata.generate-rpm.requires]
+pam = "*"
+polkit = "*"
 "layer-shell-qt6" = "*"
-"layer-shell-qt6-imports" = "*"
-"kf6-kirigami-imports" = "*"
-"kf6-qqc2-desktop-style" = "*"
-"qt6-declarative-imports" = "*"
+"kf6-kirigami" = "*"
 "qt6-wayland" = "*"
 "kf6-breeze-icons" = "*"
-
-# Theme-aware audio cue uses canberra-gtk-play; soft dep because the helper
-# falls back to pw-play / paplay (PipeWire/PulseAudio — present on any KDE
-# desktop) when libcanberra isn't installed.
-[package.metadata.generate-rpm.recommends]
-"canberra-gtk-play" = "*"

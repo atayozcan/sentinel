@@ -1,0 +1,15 @@
+#!/bin/sh
+# Sentinel-KDE .deb post-install. The package ships a prebuilt bundle
+# tarball; we extract it and run the tested, distro-adaptive install.sh
+# (which wires polkit-1 against THIS distro's PAM stack, installs the
+# binaries, and sets up the broker). --no-sudo keeps it polkit-only, like
+# the Arch package; opt into sudo/su separately.
+set -e
+[ "$1" = configure ] || exit 0
+D=/usr/lib/sentinel-kde
+rm -rf "$D/src"
+mkdir -p "$D/src"
+tar -C "$D/src" -xzf "$D/bundle.tar.gz"
+cd "$D"/src/sentinel-kde-*
+SENTINEL_SKIP_BUILD=1 ./packaging-kde/install.sh --no-sudo </dev/null
+exit 0

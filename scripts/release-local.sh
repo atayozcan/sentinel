@@ -34,6 +34,9 @@ REMOTE_REPO="${REMOTE_REPO:-/home/atay/Projects/sentinel}"
 REPRO_TOOLCHAIN="${REPRO_TOOLCHAIN:-1.96.0}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+# cargo-installed subcommands (cargo-deb, cargo-generate-rpm) live here but
+# aren't always on a non-login shell's PATH.
+export PATH="$HOME/.cargo/bin:$PATH"
 
 VERSION="$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -1)"
 DIST="$REPO_ROOT/dist"
@@ -102,10 +105,19 @@ build_bundle() {
 # ---- deb + rpm for the local (native) arch (cargo plugins) -----------------
 pkg_deb_rpm() {
     local arch; arch="$(uname -m)"
-    c "package .deb + .rpm ($arch)"
-    cargo "+$REPRO_TOOLCHAIN" deb --no-build -p sentinel-helper-kde --output "$DIST/" 2>/dev/null \
-        || cargo "+$REPRO_TOOLCHAIN" deb --no-build -p sentinel-helper-kde && cp -n target/debian/*.deb "$DIST/" 2>/dev/null || true
-    cargo "+$REPRO_TOOLCHAIN" generate-rpm -p crates/sentinel-helper-kde --output "$DIST/" 2>/dev/null || true
+    local bundle="$DIST/sentinel-kde-$VERSION-$arch-linux.tar.gz"
+    [ -f "$bundle" ] || { c "no bundle for .deb/.rpm ($arch); skipping"; return 0; }
+    # Stage the bundle at the fixed path the Cargo.toml deb/rpm metadata
+    # references (so the package ships it + runs install.sh in post-install).
+    cp "$bundle" target/release/sentinel-kde-bundle.tar.gz
+    if command -v cargo-deb >/dev/null 2>&1; then
+        c "package .deb ($arch)"
+        cargo deb --no-build -p sentinel-helper-kde >/dev/null && cp -f target/debian/*.deb "$DIST/"
+    else c ".deb skipped (cargo-deb not installed)"; fi
+    if command -v cargo-generate-rpm >/dev/null 2>&1; then
+        c "package .rpm ($arch)"
+        cargo generate-rpm -p crates/sentinel-helper-kde >/dev/null && cp -f target/generate-rpm/*.rpm "$DIST/"
+    else c ".rpm skipped (cargo-generate-rpm not installed)"; fi
 }
 
 # ---- Arch .pkg.tar.zst from a bundle (runs on asus; CARCH per arch) --------
@@ -128,6 +140,9 @@ pkg_arch() {
 case "${1:-}" in
     --bundle)            # build + assemble the reproducible bundle only (testing)
         mkdir -p "$DIST"; build_bundle; exit 0 ;;
+    --debrpm)            # build .deb + .rpm from an existing bundle (no recompile)
+        mkdir -p "$DIST"; export SOURCE_DATE_EPOCH="$(git -C "$REPO_ROOT" log -1 --format=%ct)"
+        pkg_deb_rpm; ls -1 "$DIST"/*.deb "$DIST"/*.rpm 2>/dev/null; exit 0 ;;
     --pkg-arch)          # makepkg one arch from an already-extracted bundle (asus)
         [ -n "${2:-}" ] || die "usage: --pkg-arch <arch>"
         setup_repro_env; pkg_arch "$2" "$DIST/sentinel-kde-$VERSION"; exit 0 ;;

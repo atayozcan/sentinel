@@ -1,0 +1,12 @@
+#!/bin/sh
+# Sentinel-KDE .deb pre-remove. Revert the install.sh wiring on final
+# removal. On upgrade we do nothing — the new package's postinst runs
+# install.sh, which reverts the prior state itself before reinstalling.
+set -e
+[ "$1" = remove ] || exit 0
+D=/usr/lib/sentinel-kde
+if [ -d "$D/src" ]; then
+    ( cd "$D"/src/sentinel-kde-* 2>/dev/null && ./packaging-kde/uninstall.sh -y ) || true
+    rm -rf "$D/src"
+fi
+exit 0
