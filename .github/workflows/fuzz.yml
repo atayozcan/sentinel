@@ -26,7 +26,7 @@ jobs:
       matrix:
         target: [verdict_parse, strip_elevation, format_message]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install nightly + cargo-fuzz
         run: |
           rustup toolchain install nightly --profile minimal
